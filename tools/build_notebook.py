@@ -167,7 +167,11 @@ CPU_WORKERS = 1                  # sem GPU
 DATA_PATH = ""                   # CSV (ou pasta) dos dados; vazio = raiz do repo → /kaggle/input → /content
 SYNC_PESOS = False               # enviar também os .pth ao GitHub
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "if702-miniproject-2-lstm")
-WANDB_ENTITY = os.environ.get("WANDB_ENTITY", "")''')
+WANDB_ENTITY = os.environ.get("WANDB_ENTITY", "")
+USAR_WANDB = True                # False = não envia nada ao W&B, mesmo com a chave
+USAR_GITHUB = True               # False = não espelha os resultados no GitHub, mesmo com o token
+MODO_TESTE = False               # True = passada rápida (3 configs por bloco, 2 épocas) em outputs_teste/, para validar o
+                                 # notebook inteiro em minutos antes da execução completa''')
     clone = code('''import os
 import shutil
 import subprocess
@@ -181,7 +185,7 @@ def _load_dotenv(path=".env"):
         for line in open(path, encoding="utf-8"):
             key, sep, value = line.strip().partition("=")
             if sep and not key.startswith("#") and value.strip() and not os.environ.get(key.strip()):
-                os.environ[key.strip()] = value.strip().strip("'\"")
+                os.environ[key.strip()] = value.strip().strip("'").strip('"')
 
 
 _load_dotenv()
@@ -256,12 +260,20 @@ elif os.path.isdir("/content"):
     WORKDIR = "/content"
 else:
     WORKDIR = REPO_DIR
-OUTPUTS = os.path.join(WORKDIR, "outputs")
+OUTPUTS = os.path.join(WORKDIR, "outputs_teste" if MODO_TESTE else "outputs")  # o teste nunca se mistura com a execução real
+GRID_EXTRA = "--max_configs 3 --epochs 2" if MODO_TESTE else ""
+GRID_EXTRA_B0 = "--epochs 2" if MODO_TESTE else ""  # o Bloco 0 roda completo: as 5 seeds medem o ruído
+if MODO_TESTE:
+    print("MODO_TESTE: 3 configurações por bloco, 2 épocas; resultados em outputs_teste/ (não servem como resultado).")
 os.environ["EXP_OUTPUT_DIR"] = OUTPUTS
 os.makedirs(OUTPUTS, exist_ok=True)
 print(f"Resultados em {OUTPUTS}")
 
 RUN_NAME = RUN_NAME or time.strftime("lstm-%Y%m%d-%H%M")
+if MODO_TESTE and not RUN_NAME.startswith("teste-"):
+    RUN_NAME = "teste-" + RUN_NAME
+if not USAR_GITHUB:
+    RESULTS_REPO_URL = ""
 os.environ.update({"RUN_NAME": RUN_NAME, "RESULTS_REPO_URL": RESULTS_REPO_URL, "RESULTS_BRANCH": RESULTS_BRANCH,
                    "GITHUB_TOKEN": GITHUB_TOKEN, "WANDB_PROJECT": WANDB_PROJECT, "WANDB_ENTITY": WANDB_ENTITY})
 if DATA_PATH:
@@ -279,14 +291,14 @@ elif RESUME_FROM:
     shutil.copytree(RESUME_FROM, OUTPUTS, dirs_exist_ok=True)
     print(f"Resultados anteriores copiados de {RESUME_FROM}; o que já foi concluído será pulado.")
 
-wandb_key = _secret("WANDB_API_KEY")
+wandb_key = _secret("WANDB_API_KEY") if USAR_WANDB else ""
 if wandb_key:
     os.environ["WANDB_API_KEY"] = wandb_key
     os.environ.pop("WANDB_MODE", None)
     print(f"W&B: chave carregada (projeto {WANDB_PROJECT}).")
 else:
     os.environ["WANDB_MODE"] = "disabled"
-    print(f"W&B desativado (sem chave). Resultados continuam em {OUTPUTS}.")
+    print(f"W&B desativado ({'USAR_WANDB = False' if not USAR_WANDB else 'sem chave'}). Resultados continuam em {OUTPUTS}.")
 
 if not (GITHUB_TOKEN and RESULTS_REPO_URL):
     print("GitHub: sem GITHUB_TOKEN/RESULTS_REPO_URL, os resultados ficam só em disco (e em outputs.zip).")
@@ -294,9 +306,17 @@ if not (GITHUB_TOKEN and RESULTS_REPO_URL):
 
 def backup(bloco=""):
     """Backup parcial ao fim de cada bloco: outputs.zip (sem .pth) + espelho no GitHub, se configurado."""
-    subprocess.run(f"cd {WORKDIR} && zip -qr outputs.zip outputs -x '*.pth' '*.tmp'", shell=True, check=False)
-    if os.path.isfile(os.path.join(WORKDIR, "outputs.zip")):
-        print(f"outputs.zip: {os.path.getsize(os.path.join(WORKDIR, 'outputs.zip')) / 1e6:.1f} MB")
+    import zipfile
+
+    zpath = OUTPUTS + ".zip"
+    with zipfile.ZipFile(zpath + ".tmp", "w", zipfile.ZIP_DEFLATED) as z:
+        for root, _, files in os.walk(OUTPUTS):
+            for name in files:
+                if not name.endswith((".pth", ".tmp")):
+                    full = os.path.join(root, name)
+                    z.write(full, os.path.relpath(full, WORKDIR))
+    os.replace(zpath + ".tmp", zpath)
+    print(f"{os.path.basename(zpath)}: {os.path.getsize(zpath) / 1e6:.1f} MB")
     github_sync.push(OUTPUTS, weights=SYNC_PESOS, message=f"{RUN_NAME}: {bloco or 'backup'}")''')
     data_md = md("""### Dados e partições
 
@@ -360,7 +380,8 @@ def block_cells(name, s, study):
     cells = [md(block_markdown(s, study))]
     if s.get("herda_de"):
         cells.append(code("\n".join(f'rep.show_champion("{b}")' for b in s["herda_de"])))
-    cells.append(code(f"!python src/grid_search.py grids/{name}.json --workers_per_gpu $WORKERS_PER_GPU --cpu_workers $CPU_WORKERS"))
+    extra = "$GRID_EXTRA_B0" if s.get("papel") == "referencia" else "$GRID_EXTRA"
+    cells.append(code(f"!python src/grid_search.py grids/{name}.json --workers_per_gpu $WORKERS_PER_GPU --cpu_workers $CPU_WORKERS {extra}"))
     if s.get("papel") == "ablacao":
         cells.append(md(f"#### Resultado da ablação — `{name}`\n\nΔ = (campeão sem a mudança) − (campeão), fold a fold. "
                         "Verde: a mudança ajuda além do ruído entre seeds; cinza: dispensável; vermelho: atrapalhava."))
