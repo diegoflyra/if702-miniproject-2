@@ -1,0 +1,23 @@
+{
+  "_comentario": "Ordem de execução no notebook. campeao_principal = bloco cujo campeão é o resultado principal; bonus = eixos ortogonais que partem dele.",
+  "blocos": [
+    "lstm_b0_referencia",
+    "lstm_b1_entrada",
+    "lstm_b2_capacidade",
+    "lstm_b3_ativacao_init",
+    "lstm_b4_otimizacao",
+    "lstm_b4_checagem",
+    "lstm_b5_regularizacao",
+    "lstm_b6_complementar_capacidade",
+    "lstm_b7_complementar_epocas",
+    "lstm_b8_bonus_celula",
+    "lstm_b9_bonus_augmentation",
+    "lstm_b10_ablacao"
+  ],
+  "campeao_principal": "lstm_b7_complementar_epocas",
+  "bonus": [
+    "lstm_b8_bonus_celula",
+    "lstm_b9_bonus_augmentation"
+  ],
+  "ablacao": "lstm_b10_ablacao"
+}

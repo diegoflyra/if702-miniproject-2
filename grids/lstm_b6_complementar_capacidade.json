@@ -1,0 +1,46 @@
+{
+  "bloco": "lstm_b6_complementar_capacidade",
+  "titulo": "Complementar A — Camadas e nós sob regularização",
+  "pergunta": "Com o dropout ajustado, redes com mais nós ou mais camadas voltam a compensar?",
+  "descricao": "Checagem de interação entre decisões distantes no tempo: o Bloco 2 escolheu camadas e nós só com o dropout inicial. A lista diz que muitos nós *com regularização* podem aumentar a precisão, e este bloco testa isso. A combinação idêntica ao campeão do Bloco 5 é re-treinada e serve de **checagem de reprodutibilidade**.",
+  "observar": "O heatmap camadas × nós, o gap, e se a repetição reproduz a validação do Bloco 5.",
+  "analise": [
+    "Com regularização, a capacidade ideal mudou?",
+    "A repetição reproduziu o campeão do Bloco 5? Qual o ruído entre execuções?"
+  ],
+  "herda_de": [
+    "lstm_b5_regularizacao"
+  ],
+  "eixos": {
+    "num_layers": [
+      1,
+      2,
+      3
+    ],
+    "hidden_size": [
+      32,
+      64,
+      128,
+      256
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "restricoes": {
+    "max_parametros": 2000000
+  },
+  "heatmaps": [
+    {
+      "row": "hidden_size",
+      "col": "num_layers"
+    },
+    {
+      "row": "hidden_size",
+      "col": "num_layers",
+      "value": "gap/rmse_mean"
+    }
+  ],
+  "pareado": true
+}

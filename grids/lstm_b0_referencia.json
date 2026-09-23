@@ -1,0 +1,65 @@
+{
+  "bloco": "lstm_b0_referencia",
+  "papel": "referencia",
+  "titulo": "Bloco 0 — Referência",
+  "pergunta": "Onde partimos? Quanto as previsões ingênuas e um LSTM com os valores iniciais recomendados acertam?",
+  "descricao": "Em séries financeiras, a referência difícil de bater é o **passeio aleatório** (prever que o preço de amanhã é o de hoje): `theil` < 1 e `skill` > 0 significam batê-lo, e a **POCID** mostra se o modelo acerta a direção da cotação. Também entram a média histórica, o último retorno (momentum ingênuo), uma **regressão linear** sobre a mesma janela (ser recorrente ajuda?) e o **LSTM padrão**, com os pontos de partida da lista: 1 camada oculta de 50 nós, densa de 10 unidades com ReLU, dropout de 20%, tanh na célula, Adam com lr 0,001 e decaimento 0,97 por época. Ele é a base do Bloco 1. **Ruído entre seeds:** o LSTM padrão é treinado com 5 seeds (42, 1, 2, 3, 4). A diferença entre duas execuções que só mudam a seed é a régua do estudo: uma mudança de hiperparâmetro só \"melhora de verdade\" se o ganho passar de ~2× esse ruído e se repetir na maioria dos folds.",
+  "observar": "Se o LSTM padrão bate o passeio aleatório (`val/theil` < 1) e se a POCID passa de 50% de forma consistente entre folds. E o tamanho do ruído entre seeds, que define o menor efeito detectável.",
+  "analise": [
+    "Algum modelo bateu o passeio aleatório (theil < 1, skill > 0)?",
+    "O LSTM padrão superou a regressão linear na mesma janela?",
+    "POCID e acurácia direcional: acima de 50% de forma consistente?",
+    "Ruído entre seeds: qual o menor efeito que o estudo consegue detectar?"
+  ],
+  "herda_de": [],
+  "triagem": false,
+  "configs": [
+    {
+      "_nome": "passeio_aleatorio",
+      "model": "naive_zero"
+    },
+    {
+      "_nome": "media_historica",
+      "model": "naive_mean"
+    },
+    {
+      "_nome": "ultimo_retorno",
+      "model": "naive_last"
+    },
+    {
+      "_nome": "regressao_linear",
+      "model": "linear"
+    },
+    {
+      "_nome": "lstm_padrao",
+      "model": "lstm"
+    },
+    {
+      "_nome": "lstm_padrao_seed1",
+      "model": "lstm",
+      "seed": 1
+    },
+    {
+      "_nome": "lstm_padrao_seed2",
+      "model": "lstm",
+      "seed": 2
+    },
+    {
+      "_nome": "lstm_padrao_seed3",
+      "model": "lstm",
+      "seed": 3
+    },
+    {
+      "_nome": "lstm_padrao_seed4",
+      "model": "lstm",
+      "seed": 4
+    }
+  ],
+  "ruido": [
+    "lstm_padrao",
+    "lstm_padrao_seed1",
+    "lstm_padrao_seed2",
+    "lstm_padrao_seed3",
+    "lstm_padrao_seed4"
+  ]
+}

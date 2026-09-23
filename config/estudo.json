@@ -1,0 +1,80 @@
+{
+  "_comentario": "Configuração comum a TODOS os blocos: dados, partições, métrica de decisão e valores padrão dos hiperparâmetros. Os blocos (grids/*.json) só sobrescrevem o que variam. O `padrao` segue os pontos de partida da lista de hiperparâmetros: 1 camada oculta, densa com 5–10 unidades, dropout 20%, decaimento 0,97, ReLU nas densas e tanh na célula LSTM.",
+  "titulo": "Previsão do preço do Bitcoin com LSTM",
+  "dados": {
+    "_comentario": "fonte: csv (arquivos locais, um por série), yfinance (baixa `tickers`) ou synthetic (testes). `colunas` renomeia colunas do CSV para Open/High/Low/Close/Volume. Exemplo com ações: {\"fonte\": \"yfinance\", \"tickers\": [\"PETR4.SA\", \"VALE3.SA\"], \"coluna_preco\": \"Adj Close\"}.",
+    "fonte": "csv",
+    "tickers": [
+      "BTC"
+    ],
+    "arquivos": {
+      "BTC": "data-bitcoin_timedata-2023_v2 - data-bitcoin_timedata-2023_v2.csv"
+    },
+    "colunas": {
+      "number_of_trades": "Volume"
+    },
+    "inicio": "2017-08-17",
+    "fim": "2023-08-01",
+    "coluna_preco": "Close",
+    "alinhamento": "intersecao"
+  },
+  "particoes": {
+    "_comentario": "Walk-forward: o fold k treina em tudo antes do bloco de validação k e valida nele (5 blocos de 180 dias). Teste: último ano (2022-08-01 → 2023-08-01), nunca usado em escolha. O Bitcoin negocia todos os dias, então 1 dia = 1 dia corrido.",
+    "teste_inicio": "2022-08-01",
+    "n_folds": 5,
+    "tipo": "expanding",
+    "janela_treino_max_dias": null,
+    "tamanho_validacao_dias": 180,
+    "embargo_dias": null
+  },
+  "decisao": {
+    "metrica": "val/rmse",
+    "modo": "min",
+    "triagem_folds": [
+      3,
+      4,
+      5
+    ],
+    "n_finalistas": 3
+  },
+  "padrao": {
+    "model": "lstm",
+    "features": "retornos",
+    "target": "log_return",
+    "horizon": 1,
+    "lookback": 60,
+    "scaler": "standard",
+    "cell": "lstm",
+    "num_layers": 1,
+    "hidden_size": 50,
+    "fc_neurons": [
+      10
+    ],
+    "activation": "relu",
+    "lstm_activation": "tanh",
+    "weight_init": "padrao",
+    "bidirectional": false,
+    "pooling": "last",
+    "layer_norm": false,
+    "dropout": 0.2,
+    "rnn_dropout": 0.2,
+    "input_dropout": 0.0,
+    "weight_decay": 0.0,
+    "optimizer": "adam",
+    "lr": 0.001,
+    "momentum": 0.9,
+    "scheduler": "exponential",
+    "decay_rate": 0.97,
+    "batch_size": 32,
+    "grad_clip": 1.0,
+    "loss_fn": "mse",
+    "augment": "none",
+    "aug_strength": "fraca",
+    "aug_prob": 0.5,
+    "epochs": 100,
+    "patience": 10,
+    "monitor": "val/loss",
+    "eval_train": true,
+    "seed": 42
+  }
+}

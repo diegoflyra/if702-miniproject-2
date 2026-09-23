@@ -1,0 +1,31 @@
+{
+  "bloco": "lstm_b7_complementar_epocas",
+  "titulo": "Complementar B — Número de épocas (early stopping)",
+  "pergunta": "O resultado está limitado pelo orçamento de épocas? Quanta paciência o early stopping deve ter?",
+  "descricao": "O número de épocas é decidido pelo early stopping na `val/loss`, e os pesos da melhor época são restaurados. O limite sobe para 500 épocas e varia só a paciência. Com decaimento da lr, paciência longa também dá tempo para a lr cair. O campeão deste bloco é o **resultado principal** do estudo.",
+  "observar": "Se a `melhor_epoca_media` encosta no limite e se paciência maior melhora a validação ou só gasta GPU.",
+  "analise": [
+    "Paciência maior ajudou? O resultado estava limitado pelas épocas?",
+    "Custo (tempo) × ganho:"
+  ],
+  "herda_de": [
+    "lstm_b6_complementar_capacidade"
+  ],
+  "triagem": false,
+  "fixos": {
+    "epochs": 500
+  },
+  "eixos": {
+    "patience": [
+      5,
+      10,
+      20,
+      40
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

@@ -1,0 +1,60 @@
+{
+  "bloco": "lstm_b9_bonus_augmentation",
+  "papel": "bonus",
+  "titulo": "Bônus — Data augmentation",
+  "pergunta": "Criar variações plausíveis das janelas de treino (ruído, amplitude, velocidade, ordem, recorte) melhora a previsão do campeão?",
+  "descricao": "Data augmentation é **pré-processamento**, não hiperparâmetro da rede, por isso fica fora da sequência principal (como no estudo da CNN). A cada época, cada janela de treino é transformada com probabilidade 50%; validação e teste usam as janelas originais. As janelas estão normalizadas (z-score), então as intensidades são em desvios padrão. **Jittering:** ruído gaussiano (σ 0,03 fraca / 0,1 forte). **Scaling:** multiplica a janela por um fator ~ N(1, σ) (σ 0,1 / 0,2), simulando regimes de volatilidade; com alvo em retorno, o alvo é escalado junto. **Magnitude warping:** multiplica por uma curva suave aleatória (σ 0,1 / 0,2). **Time warping:** acelera e desacelera trechos da janela (σ 0,1 / 0,2), preservando o dia da decisão. **Permutation:** embaralha 3 ou 6 segmentos da janela; se não piorar, o modelo não está usando a ordem temporal. **Window slicing:** recorta 90% ou 70% da janela e reamostra para o tamanho original (a janela deslizante com sobreposição já é como as amostras são montadas). Também entra a combinação clássica jitter + scaling. **Base:** o campeão principal, re-treinado aqui sem augmentation como referência pareada, com mais épocas e paciência para todos, porque augmentation retarda a convergência. Em séries financeiras o ganho não é garantido; o bloco mede quais estratégias ajudam e quais atrapalham.",
+  "observar": "O ganho pareado sobre a referência sem augmentation, a queda do gap treino–validação, e se a permutação piora (o que confirma que o LSTM usa a ordem temporal).",
+  "analise": [
+    "Alguma estratégia melhorou a validação além do ruído entre seeds?",
+    "Qual estratégia reduziu mais o gap treino–validação?",
+    "Permutação: o modelo depende da ordem temporal?",
+    "Time warping e slicing: distorcer o tempo ajuda ou atrapalha em retornos diários?",
+    "Intensidade fraca × forte:"
+  ],
+  "herda_de": [
+    "lstm_b7_complementar_epocas"
+  ],
+  "fixos": {
+    "epochs": 300,
+    "patience": 30,
+    "aug_prob": 0.5
+  },
+  "eixos": {
+    "augment": [
+      "none",
+      "jitter",
+      "scaling",
+      "magwarp",
+      "timewarp",
+      "permutation",
+      "slicing",
+      "jitter+scaling"
+    ],
+    "aug_strength": [
+      "fraca",
+      "forte"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true,
+  "heatmaps": [
+    {
+      "row": "augment",
+      "col": "aug_strength"
+    },
+    {
+      "row": "augment",
+      "col": "aug_strength",
+      "value": "gap/rmse_mean"
+    },
+    {
+      "row": "augment",
+      "col": "aug_strength",
+      "value": "val/pocid_mean"
+    }
+  ]
+}

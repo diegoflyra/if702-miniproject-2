@@ -1,0 +1,73 @@
+{
+  "bloco": "lstm_b5_regularizacao",
+  "titulo": "Bloco 5 — Dropout e decaimento dos pesos",
+  "pergunta": "Com a rede convergindo bem, quanto dropout e quanta penalização dos pesos controlam o overfitting ao ruído do mercado?",
+  "descricao": "Item 3 da lista, mais o decaimento dos pesos do item 5. Todo LSTM é acompanhado de dropout: `rnn_dropout` entre camadas LSTM empilhadas (só vale com 2+ camadas; com 1 camada é equivalente a 0 e é descartado), `dropout` depois da última LSTM e entre as densas (nunca na saída), e `input_dropout` na entrada. O recomendado é partir de 20% e não passar de 50%. `weight_decay` é a penalização L2, que encolhe os pesos a cada atualização. Espaço de 6 × 6 × 3 × 5 = 540 combinações, com busca aleatória de 50. Mais épocas e paciência, porque a regularização atrasa a convergência.",
+  "observar": "O gap treino–validação (`gap/rmse`) e a melhor época: o dropout atrasa a decoreba? Houve subajuste com 50%?",
+  "analise": [
+    "Dropout: 20% foi o melhor compromisso?",
+    "Dropout entre camadas e na entrada:",
+    "Decaimento dos pesos (L2):",
+    "Gap treino–validação e subajuste:",
+    "Ganho sobre o Bloco 4 (validação):"
+  ],
+  "herda_de": [
+    "lstm_b4_otimizacao",
+    "lstm_b4_checagem"
+  ],
+  "fixos": {
+    "epochs": 200,
+    "patience": 20
+  },
+  "eixos": {
+    "dropout": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5
+    ],
+    "rnn_dropout": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5
+    ],
+    "input_dropout": [
+      0.0,
+      0.1,
+      0.2
+    ],
+    "weight_decay": [
+      0.0,
+      1e-06,
+      1e-05,
+      0.0001,
+      0.001
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 50,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "dropout",
+      "col": "weight_decay"
+    },
+    {
+      "row": "dropout",
+      "col": "weight_decay",
+      "value": "gap/rmse_mean"
+    },
+    {
+      "row": "dropout",
+      "col": "rnn_dropout"
+    }
+  ]
+}

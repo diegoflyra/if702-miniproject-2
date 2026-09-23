@@ -1,0 +1,21 @@
+{
+  "bloco": "lstm_b4_checagem",
+  "titulo": "Checagem de interação",
+  "pergunta": "Com a nova otimização, a estrutura campeã do Bloco 2 continua sendo a melhor?",
+  "descricao": "O 2º e o 3º colocados do Bloco 2 (camadas, nós e densa) são treinados com a ativação, a inicialização e a otimização campeãs (K folds). O Bloco 5 parte da melhor rede entre o campeão do Bloco 4 e esta checagem.",
+  "observar": "Se a ordem das estruturas se inverte com a nova otimização.",
+  "analise": [
+    "A ordem das estruturas se manteve com a nova otimização?"
+  ],
+  "herda_de": [
+    "lstm_b4_otimizacao"
+  ],
+  "triagem": false,
+  "checagem": {
+    "bloco_origem": "lstm_b2_capacidade",
+    "posicoes": [
+      2,
+      3
+    ]
+  }
+}

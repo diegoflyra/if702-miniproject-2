@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+outputs/
+outputs.zip
+wandb/
+*.tmp
+# data/precos/ é gerado a partir do CSV de origem a cada execução (o MD5 da origem vai no manifesto)
+data/precos/
+.env
+Kaggle_CNN.ipynb

@@ -1,0 +1,50 @@
+{
+  "bloco": "lstm_b1_entrada",
+  "titulo": "Bloco 1 — Representação da entrada",
+  "pergunta": "O que a rede deve ver: quantos dias de histórico, quais features e qual alvo?",
+  "descricao": "Não está na lista de hiperparâmetros da rede, mas vem antes dela: a janela e as features definem o problema que o LSTM resolve. O alvo `close` (preço normalizado) é comparado com `log_return`; as métricas são sempre calculadas da mesma forma, então os dois são comparáveis.",
+  "observar": "Se janelas longas ajudam ou só trazem ruído, se volume, amplitude e indicadores acrescentam algo sobre só retornos, e se o alvo em preço extrapola mal fora da faixa do treino.",
+  "analise": [
+    "Janela: qual tamanho foi útil?",
+    "Features: o que acrescentou sobre só retornos?",
+    "Alvo log_return × close:",
+    "Diferença do campeão para o LSTM padrão (validação):"
+  ],
+  "herda_de": [],
+  "eixos": {
+    "lookback": [
+      5,
+      10,
+      20,
+      40,
+      60,
+      120
+    ],
+    "features": [
+      "retornos",
+      "retornos_volume",
+      "ohlcv",
+      "tecnicos"
+    ],
+    "target": [
+      "log_return",
+      "close"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "heatmaps": [
+    {
+      "row": "lookback",
+      "col": "features",
+      "facet": "target"
+    },
+    {
+      "row": "lookback",
+      "col": "features",
+      "facet": "target",
+      "value": "val/pocid_mean"
+    }
+  ]
+}

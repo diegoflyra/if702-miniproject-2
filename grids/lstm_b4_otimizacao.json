@@ -1,0 +1,77 @@
+{
+  "bloco": "lstm_b4_otimizacao",
+  "titulo": "Bloco 4 — Otimização: taxa de aprendizagem, decaimento, momentum e batch",
+  "pergunta": "Qual algoritmo, taxa de aprendizagem, taxa de decaimento, momentum e tamanho de batch fazem a rede convergir melhor?",
+  "descricao": "Item 7 (taxa de aprendizagem, entre 0 e 0,1, de preferência com decaimento) e item 5 (taxa de decaimento, com ponto de partida 0,97). Aqui o **decaimento é aplicado à taxa de aprendizagem**: lr ← lr × `decay_rate` a cada época, e 1,0 = sem decaimento. O decaimento dos **pesos** (penalização L2, `weight_decay`) é regularização e fica no Bloco 5. Também entram momentum (SGD e RMSprop; o Adam não usa) e tamanho de batch. O grid de lr é comum a todos os algoritmos de propósito, para mostrar a faixa útil de cada um. Espaço de 3 × 7 × 5 × 4 × 5 = 2.100 combinações, com **busca aleatória** de 60; combinações equivalentes (momentum no Adam) são descartadas sem gastar o orçamento.",
+  "observar": "A faixa útil de lr de cada otimizador, onde ele diverge (lr 0,1), se o decaimento estabiliza lr altas, e se batch pequeno (gradiente mais ruidoso) regulariza.",
+  "analise": [
+    "Faixa de lr útil de cada otimizador:",
+    "Houve divergência?",
+    "Decaimento da lr: 0,97 é um bom valor? Interage com a lr?",
+    "Momentum e batch size:",
+    "Ganho sobre o Bloco 3 (validação):"
+  ],
+  "herda_de": [
+    "lstm_b3_ativacao_init"
+  ],
+  "fixos": {
+    "scheduler": "exponential"
+  },
+  "eixos": {
+    "optimizer": [
+      "sgd",
+      "adam",
+      "rmsprop"
+    ],
+    "lr": [
+      0.0001,
+      0.0003,
+      0.001,
+      0.003,
+      0.01,
+      0.03,
+      0.1
+    ],
+    "decay_rate": [
+      1.0,
+      0.99,
+      0.97,
+      0.95,
+      0.9
+    ],
+    "momentum": [
+      0.0,
+      0.5,
+      0.9,
+      0.99
+    ],
+    "batch_size": [
+      16,
+      32,
+      64,
+      128,
+      256
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 60,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "optimizer",
+      "col": "lr"
+    },
+    {
+      "row": "decay_rate",
+      "col": "lr"
+    },
+    {
+      "row": "optimizer",
+      "col": "lr",
+      "value": "melhor_epoca_media"
+    }
+  ]
+}

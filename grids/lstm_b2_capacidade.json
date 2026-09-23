@@ -1,0 +1,79 @@
+{
+  "bloco": "lstm_b2_capacidade",
+  "titulo": "Bloco 2 — Camadas ocultas, nós e camada densa",
+  "pergunta": "Quantas camadas LSTM ocultas, quantos nós por camada e quantas unidades densas absorvem o problema?",
+  "descricao": "Itens 1 e 2 da lista. Regra prática: 1 camada oculta basta para problemas simples e 2 para os razoavelmente complexos; muitos nós aumentam a capacidade (com regularização) e poucos causam subajuste. Na camada densa, 5–10 unidades são um bom ponto de partida (`[]` = sem densa; `[10, 10]` = duas densas). Espaço de 3 × 7 × 7 = 147 combinações, com **busca aleatória** de 50; o dropout de 20% do padrão é mantido.",
+  "observar": "Onde a capacidade satura, se mais camadas só aumentam o gap treino–validação, e se a densa ajuda ou atrapalha.",
+  "analise": [
+    "Camadas ocultas: 1, 2 ou 3?",
+    "Nós por camada: onde satura? Houve subajuste com poucos nós?",
+    "Camada densa (unidades):",
+    "Ganho sobre o Bloco 1 (validação):"
+  ],
+  "herda_de": [
+    "lstm_b1_entrada"
+  ],
+  "eixos": {
+    "num_layers": [
+      1,
+      2,
+      3
+    ],
+    "hidden_size": [
+      8,
+      16,
+      32,
+      50,
+      64,
+      128,
+      256
+    ],
+    "fc_neurons": [
+      [],
+      [
+        5
+      ],
+      [
+        10
+      ],
+      [
+        25
+      ],
+      [
+        50
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        25,
+        10
+      ]
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 50,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "restricoes": {
+    "max_parametros": 2000000
+  },
+  "heatmaps": [
+    {
+      "row": "hidden_size",
+      "col": "num_layers"
+    },
+    {
+      "row": "hidden_size",
+      "col": "num_layers",
+      "value": "gap/rmse_mean"
+    },
+    {
+      "row": "fc_neurons",
+      "col": "num_layers"
+    }
+  ]
+}

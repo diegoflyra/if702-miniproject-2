@@ -1,0 +1,27 @@
+{
+  "bloco": "lstm_b8_bonus_celula",
+  "papel": "bonus",
+  "titulo": "Bônus — LSTM × GRU",
+  "pergunta": "A célula LSTM é necessária, ou uma GRU (menos portas, menos parâmetros) chega ao mesmo resultado?",
+  "descricao": "Fora da sequência principal: troca só a célula recorrente do campeão principal. A GRU usa a ativação tanh padrão. A receita campeã (LSTM) é re-treinada neste bloco como referência pareada.",
+  "observar": "A diferença pareada fold a fold, o número de parâmetros e o tempo de treino.",
+  "analise": [
+    "GRU × LSTM (pareado):",
+    "Diferença de parâmetros e de tempo de treino:"
+  ],
+  "herda_de": [
+    "lstm_b7_complementar_epocas"
+  ],
+  "triagem": false,
+  "eixos": {
+    "cell": [
+      "lstm",
+      "gru"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}
