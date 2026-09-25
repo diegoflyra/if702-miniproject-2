@@ -13,7 +13,7 @@ Hiperparâmetros do modelo (ver config/estudo.json → padrao):
   rnn_dropout               entre camadas LSTM empilhadas (só vale com num_layers > 1)
   input_dropout             na entrada da primeira LSTM
   recurrent_dropout         dropout no estado oculto entre passos de tempo (o `recurrent_dropout` do Keras; máscara
-                            fixa por sequência, "variacional"); usa a célula própria
+                            fixa por sequência, "variacional"); usa a célula própria (também bidirecional)
   hidden_sizes              pilha com tamanhos por camada (ex.: [100, 50], como no paper de Wu et al.); substitui
                             hidden_size × num_layers
   residual                  soma a entrada de cada camada recorrente à sua saída (projeção linear se os tamanhos diferem)
@@ -98,8 +98,6 @@ class RecurrentRegressor(nn.Module):
         if self.stacked:
             self.rnn, out = _build_stack(n_in, p)
         elif p["cell"] == "lstm" and p.get("lstm_activation", "tanh") != "tanh":
-            if p["bidirectional"]:
-                raise ValueError("lstm_activation ≠ tanh não suporta bidirectional")
             self.rnn = CustomLSTM(n_in, hidden, layers, rnn_drop, p["lstm_activation"])
         else:
             rnn_cls = {"lstm": nn.LSTM, "gru": nn.GRU}[p["cell"]]
@@ -134,9 +132,28 @@ class RecurrentRegressor(nn.Module):
 
 
 def uses_stack(p):
-    """O caminho novo (camada a camada) só é usado quando algum hiperparâmetro novo está ativo; o resto constrói
-    exatamente o mesmo modelo de antes (resultados das fases anteriores continuam reprodutíveis)."""
-    return bool(p.get("hidden_sizes")) or bool(p.get("residual")) or float(p.get("recurrent_dropout", 0.0)) > 0
+    """O caminho novo (camada a camada) só é usado quando algum hiperparâmetro novo está ativo, ou quando a célula
+    própria precisa ser bidirecional; o resto constrói exatamente o mesmo modelo de antes (fases anteriores
+    continuam reprodutíveis)."""
+    custom_bidir = (p.get("cell", "lstm") == "lstm" and bool(p.get("bidirectional"))
+                    and p.get("lstm_activation", "tanh") != "tanh")
+    return (bool(p.get("hidden_sizes")) or bool(p.get("residual")) or float(p.get("recurrent_dropout", 0.0)) > 0
+            or custom_bidir)
+
+
+class BiCustomLSTM(nn.Module):
+    """Célula própria bidirecional: uma LSTM lê a janela em ordem, outra de trás para frente (pesos separados);
+    as saídas de cada passo são concatenadas, como no nn.LSTM(bidirectional=True)."""
+
+    def __init__(self, input_size, hidden_size, activation, recurrent_dropout):
+        super().__init__()
+        self.fwd = CustomLSTM(input_size, hidden_size, 1, 0.0, activation, recurrent_dropout)
+        self.bwd = CustomLSTM(input_size, hidden_size, 1, 0.0, activation, recurrent_dropout)
+
+    def forward(self, x):
+        out_f = self.fwd(x)[0]
+        out_b = self.bwd(torch.flip(x, dims=[1]))[0]
+        return torch.cat([out_f, torch.flip(out_b, dims=[1])], dim=2), None
 
 
 def _conv_front(n_features, p):
@@ -171,11 +188,11 @@ def _build_stack(n_in, p):
     sizes = [int(h) for h in p.get("hidden_sizes") or [p["hidden_size"]] * int(p["num_layers"])]
     bidir = bool(p["bidirectional"])
     custom = p["cell"] == "lstm" and (p.get("lstm_activation", "tanh") != "tanh" or float(p.get("recurrent_dropout", 0)) > 0)
-    if custom and bidir:
-        raise ValueError("célula própria (ativação ≠ tanh ou recurrent_dropout) não suporta bidirectional")
     layers, projs, d = [], [], n_in
     for h in sizes:
-        if custom:
+        if custom and bidir:
+            layers.append(BiCustomLSTM(d, h, p.get("lstm_activation", "tanh"), p.get("recurrent_dropout", 0.0)))
+        elif custom:
             layers.append(CustomLSTM(d, h, 1, 0.0, p.get("lstm_activation", "tanh"), p.get("recurrent_dropout", 0.0)))
         else:
             layers.append({"lstm": nn.LSTM, "gru": nn.GRU}[p["cell"]](d, h, batch_first=True, bidirectional=bidir))
@@ -222,7 +239,8 @@ def init_weights(model, scheme, dense_activation="relu"):
     if scheme not in WEIGHT_INITS:
         raise ValueError(f"weight_init desconhecido: {scheme} (opções: {WEIGHT_INITS})")
     is_lstm = isinstance(getattr(model, "rnn", None), (nn.LSTM, CustomLSTM)) or (
-        isinstance(getattr(model, "rnn", None), _Stack) and isinstance(model.rnn.layers[0], (nn.LSTM, CustomLSTM)))
+        isinstance(getattr(model, "rnn", None), _Stack)
+        and isinstance(model.rnn.layers[0], (nn.LSTM, CustomLSTM, BiCustomLSTM)))
     gain_dense = nn.init.calculate_gain(dense_activation if dense_activation in ("relu", "tanh", "sigmoid") else "relu")
     for name, w in model.named_parameters():
         is_rnn = name.startswith("rnn.")

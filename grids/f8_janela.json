@@ -1,0 +1,37 @@
+{
+  "bloco": "f8_janela",
+  "titulo": "Fase 8 · O melhor LSTM com dados por hora: tamanho da janela",
+  "pergunta": "Quantas horas de histórico o LSTM precisa ver, com dados por hora?",
+  "descricao": "O melhor LSTM da fase 6 levado para os dados por hora, com janelas de 24, 72, 168 e 336 horas (1, 3, 7 e 14 dias). A célula é fixada em tanh e sem dropout recorrente (a implementação rápida do cuDNN): a célula própria percorre cada passo em Python, e com janelas de centenas de horas e dezenas de milhares de amostras ficaria lenta demais para o tempo do Kaggle.",
+  "observar": "Se algum tamanho de janela bate o LSTM padrão por hora e a série diária (fase 3).",
+  "analise": [
+    "Qual janela funcionou melhor?",
+    "Os dados por hora superaram a série diária?"
+  ],
+  "herda_de": [],
+  "base_de": {
+    "estudo": "config/estudo_btc_longo.json",
+    "bloco": "f6_b2_regularizacao"
+  },
+  "fixos": {
+    "horizon": 24,
+    "lstm_activation": "tanh",
+    "recurrent_dropout": 0.0,
+    "batch_size": 256,
+    "epochs": 100,
+    "patience": 10
+  },
+  "triagem": false,
+  "eixos": {
+    "lookback": [
+      24,
+      72,
+      168,
+      336
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": false
+}

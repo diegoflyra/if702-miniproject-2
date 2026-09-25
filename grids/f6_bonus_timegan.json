@@ -1,0 +1,66 @@
+{
+  "bloco": "f6_bonus_timegan",
+  "papel": "bonus",
+  "timegan": true,
+  "titulo": "Fase 6 · Bônus — Dados sintéticos com TimeGAN (série longa)",
+  "pergunta": "Janelas sintéticas geradas por um TimeGAN ajudam o LSTM, ou o gerador só reproduz o ruído?",
+  "descricao": "TimeGAN (Yoon et al., 2019) treinado dentro de cada fold, só com as janelas de treino (a janela e o alvo juntos, como uma sequência), com 1.000 ou 3.000 iterações por etapa. **Mistura:** a cada batch de treino, janelas sintéticas são somadas às reais na proporção indicada. **Só sintético (TSTR, train on synthetic, test on real):** o LSTM treina só com o sintético e é avaliado na validação real; se ficar muito pior que treinar com dados reais, o gerador aprendeu ruído, não o BTC. **Diagnósticos por fold:** um classificador tenta separar janelas reais de sintéticas (0 = indistinguíveis), e os fatos estilizados do retorno (curtose, autocorrelação do retorno e do |retorno|) são comparados entre real e sintético. O risco apontado no desenho do experimento é que, numa série tão ruidosa e movida por eventos externos, o gerador reproduza o ruído e não as propriedades do BTC; os diagnósticos medem isso diretamente.",
+  "observar": "Os diagnósticos do gerador (fatos estilizados, discriminativo), o TSTR e o Δ pareado da mistura sobre o treino só com dados reais.",
+  "analise": [
+    "O gerador reproduz as caudas pesadas e os aglomerados de volatilidade do BTC?",
+    "TSTR: o LSTM treinado só com sintético prevê o BTC real?",
+    "A mistura melhorou a validação além do ruído?",
+    "Mais iterações do TimeGAN melhoraram o gerador?"
+  ],
+  "herda_de": [
+    "f6_b2_regularizacao"
+  ],
+  "triagem": false,
+  "eixos": {
+    "gan": [
+      {
+        "_rotulo": "sem TimeGAN",
+        "timegan": "none"
+      },
+      {
+        "_rotulo": "mistura 0,5×",
+        "timegan": "mistura",
+        "timegan_ratio": 0.5,
+        "timegan_iter": 1000
+      },
+      {
+        "_rotulo": "mistura 1×",
+        "timegan": "mistura",
+        "timegan_ratio": 1.0,
+        "timegan_iter": 1000
+      },
+      {
+        "_rotulo": "mistura 2×",
+        "timegan": "mistura",
+        "timegan_ratio": 2.0,
+        "timegan_iter": 1000
+      },
+      {
+        "_rotulo": "mistura 1× (3000 it)",
+        "timegan": "mistura",
+        "timegan_ratio": 1.0,
+        "timegan_iter": 3000
+      },
+      {
+        "_rotulo": "só sintético (TSTR)",
+        "timegan": "so_sintetico",
+        "timegan_iter": 1000
+      },
+      {
+        "_rotulo": "só sintético (TSTR, 3000 it)",
+        "timegan": "so_sintetico",
+        "timegan_iter": 3000
+      }
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

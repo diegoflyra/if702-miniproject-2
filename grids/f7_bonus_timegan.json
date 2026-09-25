@@ -1,0 +1,48 @@
+{
+  "bloco": "f7_bonus_timegan",
+  "papel": "bonus",
+  "timegan": true,
+  "titulo": "Fase 7 · Bônus — TimeGAN sobre o conjunto de criptomoedas",
+  "pergunta": "Com muito mais janelas reais para aprender, o TimeGAN gera dados sintéticos mais úteis?",
+  "descricao": "TimeGAN (Yoon et al., 2019) treinado dentro de cada fold, só com as janelas de treino (a janela e o alvo juntos, como uma sequência), com 1.000 ou 3.000 iterações por etapa. **Mistura:** a cada batch de treino, janelas sintéticas são somadas às reais na proporção indicada. **Só sintético (TSTR, train on synthetic, test on real):** o LSTM treina só com o sintético e é avaliado na validação real; se ficar muito pior que treinar com dados reais, o gerador aprendeu ruído, não o BTC. **Diagnósticos por fold:** um classificador tenta separar janelas reais de sintéticas (0 = indistinguíveis), e os fatos estilizados do retorno (curtose, autocorrelação do retorno e do |retorno|) são comparados entre real e sintético. O risco apontado no desenho do experimento é que, numa série tão ruidosa e movida por eventos externos, o gerador reproduza o ruído e não as propriedades do BTC; os diagnósticos medem isso diretamente. Aqui o gerador aprende com as janelas de todas as moedas do grupo campeão (muito mais dados que na fase 6).",
+  "observar": "Se os diagnósticos do gerador melhoram em relação à fase 6 e se a mistura passa a ajudar.",
+  "analise": [
+    "Os diagnósticos do gerador melhoraram com mais dados?",
+    "A mistura ajudou o BTC?",
+    "TSTR:"
+  ],
+  "herda_de": [
+    "f7_ativos"
+  ],
+  "triagem": false,
+  "eixos": {
+    "gan": [
+      {
+        "_rotulo": "sem TimeGAN",
+        "timegan": "none"
+      },
+      {
+        "_rotulo": "mistura 1×",
+        "timegan": "mistura",
+        "timegan_ratio": 1.0,
+        "timegan_iter": 1000
+      },
+      {
+        "_rotulo": "mistura 1× (3000 it)",
+        "timegan": "mistura",
+        "timegan_ratio": 1.0,
+        "timegan_iter": 3000
+      },
+      {
+        "_rotulo": "só sintético (TSTR)",
+        "timegan": "so_sintetico",
+        "timegan_iter": 1000
+      }
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

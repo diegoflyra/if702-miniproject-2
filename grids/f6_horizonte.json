@@ -1,0 +1,28 @@
+{
+  "bloco": "f6_horizonte",
+  "titulo": "Fase 6 · Horizonte de previsão",
+  "pergunta": "Prever o preço de 5 ou 20 dias à frente é mais fácil que prever o de amanhã?",
+  "descricao": "O campeão de regularização com horizonte de 1, 5 e 20 dias: o alvo passa a ser o log-retorno de h dias (o preço de t+h), e a referência é o passeio aleatório no mesmo horizonte (prever que o preço de t+h é o de t). O embargo entre treino e validação cresce junto (h dias). O RMSE de horizontes diferentes não é comparável (retornos maiores, erros maiores), por isso este bloco decide pelo **Theil**, que já é relativo ao passeio aleatório do mesmo horizonte. Com h > 1, dias vizinhos compartilham parte do período previsto, então a POCID e a acurácia direcional ficam correlacionadas entre dias.",
+  "observar": "Se o Theil cai (e a POCID sobe) com horizontes maiores, onde há menos ruído relativo.",
+  "analise": [
+    "Com qual horizonte o modelo mais se afasta do passeio aleatório?",
+    "A direção (POCID, acurácia direcional) melhora em horizontes maiores?"
+  ],
+  "herda_de": [
+    "f6_b2_regularizacao"
+  ],
+  "triagem": false,
+  "metrica_decisao": "val/theil",
+  "eixos": {
+    "horizon": [
+      1,
+      5,
+      20
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

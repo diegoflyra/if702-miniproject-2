@@ -55,6 +55,24 @@ for v in arqs:
     y = m(torch.randn(8, int(base["lookback"]), 3))
     assert y.shape == (8,) and torch.isfinite(y).all(), v
     print(f"OK {v}: {models.count_parameters(m):,} parâmetros")
+# célula própria bidirecional: com tanh, a direção reversa tem de reproduzir o nn.LSTM bidirecional
+torch.manual_seed(0)
+ref = torch.nn.LSTM(3, 8, batch_first=True, bidirectional=True)
+own = models.BiCustomLSTM(3, 8, "tanh", 0.0)
+sd = ref.state_dict()
+own.fwd.load_state_dict({k: v for k, v in sd.items() if not k.endswith("_reverse")})
+own.bwd.load_state_dict({k.replace("_reverse", ""): v for k, v in sd.items() if k.endswith("_reverse")})
+x = torch.randn(4, 15, 3)
+diff = (ref(x)[0] - own(x)[0]).abs().max().item()
+assert diff < 1e-5, f"BiCustomLSTM difere do nn.LSTM bidirecional: {diff}"
+print(f"OK célula própria bidirecional = nn.LSTM bidirecional (dif. máx. {diff:.1e})")
+for v in [{"bidirectional": True, "lstm_activation": "relu", "hidden_sizes": [100, 50], "layer_norm": True},
+          {"bidirectional": True, "recurrent_dropout": 0.3, "hidden_sizes": [100, 50]},
+          {"bidirectional": True, "lstm_activation": "softsign", "weight_init": "glorot_ortogonal"}]:
+    m = models.build_model(3, {**base, **v})
+    m.train()
+    assert torch.isfinite(m(torch.randn(8, int(base["lookback"]), 3))).all(), v
+    print(f"OK {v}")
 # sem hiperparâmetros novos, o modelo é exatamente o de antes (fases anteriores continuam reprodutíveis)
 assert not models.uses_stack(base)
 # dropout recorrente: em avaliação é identidade; em treino, muda a saída

@@ -1,0 +1,59 @@
+{
+  "bloco": "f6_b1_ativacao_init",
+  "titulo": "Fase 6 · Ativações e inicialização (refeito)",
+  "pergunta": "Quais ativações (na célula LSTM e nas densas) e qual esquema de inicialização funcionam melhor com a estrutura campeã?",
+  "descricao": "Refaz o bloco de ativações da fase 5, que perdeu 72 das combinações: o campeão de arquitetura é bidirecional e a célula LSTM própria (usada para ativações ≠ tanh) não suportava bidirecional. Agora suporta (a direção reversa reproduz o nn.LSTM bidirecional com diferença de 1e-7). Itens 4 e 6 da lista. **Célula LSTM:** as portas são sempre sigmoid; varia a ativação da candidata e da saída (tanh é o padrão; sigmoid, softsign e ReLU usam uma célula própria, mais lenta que o cuDNN). **Densas:** ReLU, tanh, sigmoid e ELU; se a campeã não tiver camada densa, esse eixo não tem efeito e as combinações equivalentes são descartadas. A saída é sempre linear, porque o alvo é contínuo (sigmoid e softmax na saída são para classificação). **Inicialização:** pesos pequenos e aleatórios; `padrao` = PyTorch U(±1/√h), `uniforme` = U(±0,05), `normal` = N(0; 0,05), `xavier` (Glorot), `glorot_ortogonal` (padrão do Keras: ortogonal na recorrência e bias de esquecimento 1) e `he` (Kaiming, pensado para ReLU). Espaço de 4 × 4 × 6 = 96 combinações, com busca aleatória de 40.",
+  "observar": "Se a ativação da célula muda algo além de tanh (ReLU pode explodir sem limite), e se a inicialização afeta a convergência (`melhor_epoca_media`) e a variância entre folds.",
+  "analise": [
+    "Ativação da célula LSTM:",
+    "Ativação das densas:",
+    "Inicialização: afetou a convergência ou só o ruído entre folds?",
+    "Ganho sobre o Bloco 2 (validação):"
+  ],
+  "herda_de": [
+    "f5_b8_epocas"
+  ],
+  "eixos": {
+    "lstm_activation": [
+      "tanh",
+      "sigmoid",
+      "softsign",
+      "relu"
+    ],
+    "activation": [
+      "relu",
+      "tanh",
+      "sigmoid",
+      "elu"
+    ],
+    "weight_init": [
+      "padrao",
+      "uniforme",
+      "normal",
+      "xavier",
+      "glorot_ortogonal",
+      "he"
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 40,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "weight_init",
+      "col": "lstm_activation"
+    },
+    {
+      "row": "weight_init",
+      "col": "lstm_activation",
+      "value": "melhor_epoca_media"
+    },
+    {
+      "row": "activation",
+      "col": "lstm_activation"
+    }
+  ]
+}

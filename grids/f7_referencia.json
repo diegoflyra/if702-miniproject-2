@@ -1,0 +1,65 @@
+{
+  "bloco": "f7_referencia",
+  "papel": "referencia",
+  "titulo": "Fase 7 · Referência (só BTC, mesmas datas)",
+  "pergunta": "O estudo com várias moedas reproduz a série longa quando treina só com o BTC?",
+  "descricao": "As mesmas referências da série longa (passeio aleatório, média, último retorno, regressão linear e o LSTM padrão com 5 seeds), treinadas só com o BTC. Valida que este estudo reproduz a série longa antes de acrescentar outras moedas, e dá a régua de ruído entre seeds da fase.",
+  "observar": "Se o Theil de teste do LSTM padrão fica abaixo de 1 em todas as seeds, e se a acurácia de direção sai de ~50%.",
+  "analise": [
+    "Algum modelo bateu o passeio aleatório (theil < 1, skill > 0)?",
+    "O LSTM padrão superou a regressão linear na mesma janela?",
+    "POCID e acurácia direcional: acima de 50% de forma consistente?",
+    "Ruído entre seeds: qual o menor efeito que o estudo consegue detectar?"
+  ],
+  "herda_de": [],
+  "triagem": false,
+  "configs": [
+    {
+      "_nome": "passeio_aleatorio",
+      "model": "naive_zero"
+    },
+    {
+      "_nome": "media_historica",
+      "model": "naive_mean"
+    },
+    {
+      "_nome": "ultimo_retorno",
+      "model": "naive_last"
+    },
+    {
+      "_nome": "regressao_linear",
+      "model": "linear"
+    },
+    {
+      "_nome": "lstm_padrao",
+      "model": "lstm"
+    },
+    {
+      "_nome": "lstm_padrao_seed1",
+      "model": "lstm",
+      "seed": 1
+    },
+    {
+      "_nome": "lstm_padrao_seed2",
+      "model": "lstm",
+      "seed": 2
+    },
+    {
+      "_nome": "lstm_padrao_seed3",
+      "model": "lstm",
+      "seed": 3
+    },
+    {
+      "_nome": "lstm_padrao_seed4",
+      "model": "lstm",
+      "seed": 4
+    }
+  ],
+  "ruido": [
+    "lstm_padrao",
+    "lstm_padrao_seed1",
+    "lstm_padrao_seed2",
+    "lstm_padrao_seed3",
+    "lstm_padrao_seed4"
+  ]
+}

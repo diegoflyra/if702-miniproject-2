@@ -910,3 +910,35 @@ def fusion_report(exps, max_size=5, metric=None):
     print("Diversidade cognitiva média de cada modelo (validação):",
           {_short(a): round(float(np.mean([cd[(a, b)] for b in names if b != a])), 4) for a in names})
     return df
+
+
+def timegan_diagnostics(block):
+    """Diagnósticos do TimeGAN por configuração (média entre folds): o gerador reproduz as propriedades do BTC?
+
+    Compara, no canal de retorno, curtose (caudas pesadas), autocorrelação do retorno e do |retorno| (aglomerados de
+    volatilidade) entre janelas reais e sintéticas, e mostra o score discriminativo (0 = indistinguíveis, 0,5 =
+    trivialmente distinguíveis) e o Theil de validação. O TSTR é a linha "só sintético".
+    """
+    rows = []
+    for e in results.configs(block)["exp_name"]:
+        res = results.fold_results(e)
+        diags = [r["timegan"] for r in res.values() if "timegan" in r]
+        s = results.summarize(e)
+        row = {"configuração": _short(e), "val/theil": s["val/theil_mean"] if s else np.nan,
+               "val/pocid": s["val/pocid_mean"] if s else np.nan}
+        if diags:
+            row.update({"discriminativo": np.mean([d["discriminativo"] for d in diags]),
+                        "curtose real": np.mean([d["real"]["curtose"] for d in diags]),
+                        "curtose sint.": np.mean([d["sintetico"]["curtose"] for d in diags]),
+                        "acf ret. real": np.mean([d["real"]["acf_retorno"] for d in diags]),
+                        "acf ret. sint.": np.mean([d["sintetico"]["acf_retorno"] for d in diags]),
+                        "acf |ret| real": np.mean([d["real"]["acf_abs_retorno"] for d in diags]),
+                        "acf |ret| sint.": np.mean([d["sintetico"]["acf_abs_retorno"] for d in diags]),
+                        "janelas reais": int(np.mean([d["n_real"] for d in diags])),
+                        "segundos/fold": np.mean([d["segundos"] for d in diags])})
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    _save_csv(df, f"timegan_{block}")
+    if "curtose sint." in df:
+        print("Se o sintético reproduz o BTC, as colunas 'real' e 'sint.' ficam próximas e o discriminativo fica perto de 0.")
+    return df

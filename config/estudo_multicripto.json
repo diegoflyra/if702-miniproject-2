@@ -1,23 +1,99 @@
 {
   "_comentario": "Configuração comum a TODOS os blocos: dados, partições, métrica de decisão e valores padrão dos hiperparâmetros. Os blocos (grids/*.json) só sobrescrevem o que variam. O `padrao` segue os pontos de partida da lista de hiperparâmetros: 1 camada oculta, densa com 5–10 unidades, dropout 20%, decaimento 0,97, ReLU nas densas e tanh na célula LSTM.",
-  "id": "btc_longo",
-  "titulo": "Previsão do preço do Bitcoin com LSTM (série longa, 2014–2026)",
-  "saida": "outputs_btc_longo",
-  "wandb_project": "if702-miniproject-2-lstm-longo",
+  "id": "multicripto",
+  "titulo": "Previsão do BTC com LSTM treinado em várias criptomoedas (2014–2026)",
+  "saida": "outputs_multicripto",
+  "wandb_project": "if702-miniproject-2-lstm-multicripto",
   "dados": {
-    "_comentario": "BTC-USD diário do Yahoo Finance, baixado com yfinance em 2026-09-24 e congelado no repositório (o Yahoo pode revisar dados antigos). Volume em dólares.",
+    "_comentario": "15 criptomoedas diárias (Yahoo Finance, baixadas em 2026-09-24 e congeladas em data/cripto/). O BTC é o mesmo arquivo da série longa. Um único LSTM treina com as janelas de todas as moedas do grupo escolhido (hiperparâmetro `ativos`), com normalização por moeda; validação e teste são SÓ no BTC (`avaliar`), então as métricas são diretamente comparáveis às da série longa. Moedas que ainda não existiam num fold ficam de fora dele.",
     "fonte": "csv",
     "tickers": [
-      "BTC"
+      "BTC",
+      "ETH",
+      "LTC",
+      "XRP",
+      "BNB",
+      "DOGE",
+      "BCH",
+      "XLM",
+      "ADA",
+      "LINK",
+      "TRX",
+      "SOL",
+      "XMR",
+      "DASH",
+      "ETC"
     ],
     "arquivos": {
-      "BTC": "data/btc-usd_yahoo_2014-09-17_2026-09-23.csv"
+      "BTC": "data/cripto/BTC.csv",
+      "ETH": "data/cripto/ETH.csv",
+      "LTC": "data/cripto/LTC.csv",
+      "XRP": "data/cripto/XRP.csv",
+      "BNB": "data/cripto/BNB.csv",
+      "DOGE": "data/cripto/DOGE.csv",
+      "BCH": "data/cripto/BCH.csv",
+      "XLM": "data/cripto/XLM.csv",
+      "ADA": "data/cripto/ADA.csv",
+      "LINK": "data/cripto/LINK.csv",
+      "TRX": "data/cripto/TRX.csv",
+      "SOL": "data/cripto/SOL.csv",
+      "XMR": "data/cripto/XMR.csv",
+      "DASH": "data/cripto/DASH.csv",
+      "ETC": "data/cripto/ETC.csv"
     },
     "colunas": {},
     "inicio": "2014-09-17",
     "fim": "2026-09-23",
     "coluna_preco": "Close",
-    "alinhamento": "intersecao"
+    "alinhamento": "uniao",
+    "avaliar": [
+      "BTC"
+    ],
+    "grupos_ativos": {
+      "btc": [
+        "BTC"
+      ],
+      "btc_eth": [
+        "BTC",
+        "ETH"
+      ],
+      "top5": [
+        "BTC",
+        "ETH",
+        "BNB",
+        "XRP",
+        "LTC"
+      ],
+      "top10": [
+        "BTC",
+        "ETH",
+        "BNB",
+        "XRP",
+        "LTC",
+        "DOGE",
+        "ADA",
+        "BCH",
+        "LINK",
+        "TRX"
+      ],
+      "todas": [
+        "BTC",
+        "ETH",
+        "LTC",
+        "XRP",
+        "BNB",
+        "DOGE",
+        "BCH",
+        "XLM",
+        "ADA",
+        "LINK",
+        "TRX",
+        "SOL",
+        "XMR",
+        "DASH",
+        "ETC"
+      ]
+    }
   },
   "particoes": {
     "_comentario": "Walk-forward: 5 blocos de validação de 365 dias antes do teste; teste = último ano (2025-09-24 → 2026-09-23). O fold 1 treina em ~6 anos (2014–2020).",
@@ -90,6 +166,7 @@
     "alvo_vol": false,
     "norm_janela": false,
     "treino_inicio": null,
+    "ativos": "btc",
     "timegan": "none",
     "timegan_ratio": 1.0,
     "timegan_iter": 1000,

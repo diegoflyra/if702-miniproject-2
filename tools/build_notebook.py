@@ -106,7 +106,9 @@ resultados por fold, pesos, previsões), `_grids/{{bloco}}/` por bloco (configur
 `_relatorio/` com tabelas e figuras.
 
 **Tempo estimado:** a fase 1 tem ~1.000 treinos de fold (~1–3 h no Kaggle com 2× T4); as fases 3 e 4 somam ~100 treinos na
-série longa (~20–40 min); a fase 5 tem ~1.200 treinos na série longa (~2–4 h). Para rodar só uma parte, use `FASES`. Se a sessão cair ou passar de 12 h, retome (veja abaixo): o que terminou é pulado."""
+série longa (~20–40 min); a fase 5 tem ~1.200 treinos na série longa (~2–4 h); as fases 6 a 8 somam ~600 treinos, parte
+deles com dezenas de milhares de janelas (várias moedas, dados por hora) e com o TimeGAN (~2–4 h). Para rodar só uma parte,
+use `FASES` (e `RESUME_FROM` para trazer os resultados das fases que já rodaram). Se a sessão cair ou passar de 12 h, retome (veja abaixo): o que terminou é pulado."""
 
 
 def environment_md():
@@ -151,7 +153,7 @@ RESULTS_REPO_URL = REPO_URL      # onde espelhar os resultados ("" = não enviar
 RESULTS_BRANCH = "resultados"    # branch órfão só de resultados
 RUN_NAME = ""                    # vazio = "lstm-AAAAMMDD-HHMM"; fixe um nome para retomar pelo GitHub
 RESUME_FROM = ""                 # "" | "github" | pasta com os resultados de uma execução anterior
-FASES = ["fase1", "fase2", "fase3", "fase4", "fase5"]  # fases a executar (as demais só são lidas, se já tiverem resultados)
+FASES = ["fase1", "fase2", "fase3", "fase4", "fase5", "fase6", "fase7", "fase8"]  # fases a executar (as demais só são lidas, se já tiverem resultados)
 WORKERS_PER_GPU = 2              # experimentos simultâneos por GPU (LSTMs pequenos; o Kaggle tem 4 CPUs)
 CPU_WORKERS = 1                  # sem GPU
 DATA_PATH = ""                   # CSV (ou pasta) da série curta; vazio = raiz do repo → /kaggle/input → /content
@@ -520,7 +522,8 @@ def block_cells(name, s, study):
                         "Efeito de cada valor em relação ao valor da base, **controlando os outros eixos** (modelo aditivo "
                         "sobre todas as configurações), e quanto da variação da métrica cada eixo explica. "
                         "Verde = melhora além de 2× o ruído entre seeds; cinza = indistinguível de ruído."))
-        cells.append(code(f'importancia, efeitos = rep.axis_importance("{name}")\ndisplay(importancia)\ndisplay(efeitos)'))
+        met = f', metric="{s["metrica_decisao"]}"' if s.get("metrica_decisao") else ""
+        cells.append(code(f'importancia, efeitos = rep.axis_importance("{name}"{met})\ndisplay(importancia)\ndisplay(efeitos)'))
     for hm in s.get("heatmaps", []):
         args = ", ".join(f'{k}={json.dumps(v)}' for k, v in hm.items())
         cells.append(code(f'rep.heatmap("{name}", {args})'))
@@ -536,7 +539,12 @@ def block_cells(name, s, study):
         cells.append(code('ruido = rep.noise_floor()\nrep.noise_floor("val/pocid")'))
     if s.get("pareado") or s.get("incluir_base"):
         cells.append(md("#### Comparação pareada por fold (validação)\n\nReferência: a base do bloco re-treinada aqui (mesmos folds e seed); `veredito` compara o Δ com o ruído entre seeds."))
-        cells.append(code(f'rep.paired_comparison(rep.base_config_name("{name}"), "{name}__*")'))
+        met = f', metric="{s["metrica_decisao"]}"' if s.get("metrica_decisao") else ""
+        cells.append(code(f'rep.paired_comparison(rep.base_config_name("{name}"), "{name}__*"{met})'))
+        cells.append(code(f'rep.paired_comparison(rep.base_config_name("{name}"), "{name}__*", metric="val/pocid")'))
+    if s.get("timegan"):
+        cells.append(md("#### Diagnósticos do TimeGAN\n\nO gerador reproduz as propriedades do BTC ou só o ruído? Fatos estilizados do retorno (real × sintético), score discriminativo e o TSTR (linha \"só sintético\")."))
+        cells.append(code(f'rep.timegan_diagnostics("{name}")'))
     if s.get("comparar_com"):
         cells.append(md(f"#### Comparação pareada com `{s['comparar_com']}` (validação)"))
         cells.append(code(f'rep.paired_comparison("{s["comparar_com"]}", "{name}__*")'))

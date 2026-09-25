@@ -1,0 +1,35 @@
+{
+  "bloco": "f7_ativos",
+  "titulo": "Fase 7 · Quantas criptomoedas no treino",
+  "pergunta": "Treinar o LSTM com janelas de outras criptomoedas melhora a previsão do BTC?",
+  "descricao": "O melhor LSTM da fase 6, treinado com as janelas de 1, 2, 5, 10 ou 15 criptomoedas (normalização por moeda; um único modelo). A validação e o teste são sempre no BTC. É o equivalente, nesta série, ao data augmentation da CNN: mais exemplos de treino, só que reais: a dinâmica de curto prazo das criptomoedas é parecida, então as outras moedas mostram ao modelo muito mais situações de mercado. Moedas lançadas depois de 2017 só entram nos folds em que já existiam.",
+  "observar": "Se o Theil do BTC cai à medida que entram mais moedas, e a partir de quantas moedas satura (ou piora, se as outras moedas se comportarem diferente do BTC).",
+  "analise": [
+    "Mais moedas melhoraram a previsão do BTC além do ruído?",
+    "Com quantas moedas o ganho satura?",
+    "E a direção (POCID)?"
+  ],
+  "herda_de": [],
+  "base_de": {
+    "estudo": "config/estudo_btc_longo.json",
+    "bloco": "f6_b2_regularizacao",
+    "manter": [
+      "ativos"
+    ]
+  },
+  "triagem": false,
+  "eixos": {
+    "ativos": [
+      "btc",
+      "btc_eth",
+      "top5",
+      "top10",
+      "todas"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

@@ -161,7 +161,7 @@ def evaluate(model, fd, split, loss_fn):
     rows_np = rows.cpu().numpy()
     pred_lr = fd.to_log_return(rows_np, y_hat.cpu().numpy())
     out = {f"{split}/loss": loss}
-    out.update(M.compute(pred_lr, fd.lr_h[rows_np], fd.tick_id[rows_np], fd.tickers, split, fd.price[rows_np], rows_np))
+    out.update(M.compute(pred_lr, fd.lr_h[rows_np], fd.tick_id[rows_np], fd.tickers, split, fd.price[rows_np], rows_np // fd.row_step))
     return out, rows_np, pred_lr
 
 
@@ -179,7 +179,7 @@ def naive_predict(p, fd, split):
         pred = np.where(same, np.log(fd.price[rows] / fd.price[prev]), 0.0)
     else:
         raise ValueError(kind)
-    out = M.compute(pred, fd.lr_h[rows], fd.tick_id[rows], fd.tickers, split, fd.price[rows], rows)
+    out = M.compute(pred, fd.lr_h[rows], fd.tick_id[rows], fd.tickers, split, fd.price[rows], rows // fd.row_step)
     return out, rows, pred
 
 
@@ -251,7 +251,7 @@ def run_fold(p, fold, out_dir, block, device, tracker):
             rows = fd.idx[split]
             rows_np = rows.cpu().numpy()
             pred = fd.to_log_return(rows_np, est.predict(_flat(fd, rows)))
-            outs[split] = (M.compute(pred, fd.lr_h[rows_np], fd.tick_id[rows_np], fd.tickers, split, fd.price[rows_np], rows_np),
+            outs[split] = (M.compute(pred, fd.lr_h[rows_np], fd.tick_id[rows_np], fd.tickers, split, fd.price[rows_np], rows_np // fd.row_step),
                            rows_np, pred)
         tr, (va, v_rows, v_pred), (te, t_rows, t_pred) = outs["train"][0], outs["val"], outs["test"]
         row = add_gap({"fold": fold, "epoch": 0, **tr, **va})
@@ -277,15 +277,31 @@ def run_fold(p, fold, out_dir, block, device, tracker):
         ckpt = os.path.join(fold_dir, "modelo.pth")
         bs, n_train = int(p["batch_size"]), fd.size("train")
         epochs_run = 0
+        gan_mode = p.get("timegan", "none")
+        syn_X = syn_y = None
+        if gan_mode != "none":  # janelas sintéticas do TimeGAN treinado só com o treino deste fold
+            import timegan
+
+            syn_X, syn_y, gan_diag = timegan.synthetic_for_fold(fd, p, fold)
+            ratio = float(p.get("timegan_ratio", 1.0))
         for epoch in range(1, int(p["epochs"]) + 1):
             model.train()
             t0 = time.time()
-            perm = fd.idx["train"][torch.randperm(n_train, device=device)]
+            n_iter = len(syn_X) if gan_mode == "so_sintetico" else n_train
+            perm = (torch.randperm(n_iter, device=device) if gan_mode == "so_sintetico"
+                    else fd.idx["train"][torch.randperm(n_train, device=device)])
             running, seen = 0.0, 0
-            for i in range(0, n_train, bs):
+            for i in range(0, n_iter, bs):
                 rows = perm[i:i + bs]
                 opt.zero_grad(set_to_none=True)
-                xb, yb = augment.apply(fd.windows(rows), fd.y[rows], p)  # só no treino; "none" = sem mudança
+                if gan_mode == "so_sintetico":  # TSTR: treino só com sintético, validação real
+                    xb, yb = syn_X[rows], syn_y[rows]
+                else:
+                    xb, yb = augment.apply(fd.windows(rows), fd.y[rows], p)  # só no treino; "none" = sem mudança
+                    if gan_mode == "mistura":
+                        k = max(1, int(round(ratio * len(rows))))
+                        pick = torch.randint(0, len(syn_X), (k,), device=device)
+                        xb, yb = torch.cat([xb, syn_X[pick]]), torch.cat([yb, syn_y[pick]])
                 loss = loss_fn(model(xb), yb)
                 if not torch.isfinite(loss):
                     break
@@ -332,6 +348,8 @@ def run_fold(p, fold, out_dir, block, device, tracker):
               "tempo_s": time.time() - t_start,
               "train": {k: v for k, v in train_final.items() if k.startswith("train/")},
               "val": va, "test": {k: v for k, v in te.items() if k.startswith("test/")}}
+    if p.get("timegan", "none") != "none" and p["model"] not in models.NAIVE_MODELS | models.SKLEARN_MODELS:
+        result["timegan"] = gan_diag
     common.save_json(os.path.join(fold_dir, "resultado.json"), result)
     common.save_json(os.path.join(fold_dir, "done.json"), {"fold": fold, "concluido_em": time.strftime("%Y-%m-%d %H:%M:%S")})
     print(f"  fold {fold}: {decision_metric}={va.get(decision_metric, float('nan')):.6f} "

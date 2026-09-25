@@ -1,33 +1,34 @@
 {
   "_comentario": "Configuração comum a TODOS os blocos: dados, partições, métrica de decisão e valores padrão dos hiperparâmetros. Os blocos (grids/*.json) só sobrescrevem o que variam. O `padrao` segue os pontos de partida da lista de hiperparâmetros: 1 camada oculta, densa com 5–10 unidades, dropout 20%, decaimento 0,97, ReLU nas densas e tanh na célula LSTM.",
-  "id": "btc_2017_2023",
-  "titulo": "Previsão do preço do Bitcoin com LSTM",
-  "saida": "outputs",
-  "wandb_project": "if702-miniproject-2-lstm",
+  "id": "btc_horario",
+  "titulo": "Previsão do BTC com LSTM em dados por hora (2017–2026)",
+  "saida": "outputs_btc_horario",
+  "wandb_project": "if702-miniproject-2-lstm-horario",
   "dados": {
-    "_comentario": "fonte: csv (arquivos locais, um por série), yfinance (baixa `tickers`) ou synthetic (testes). `colunas` renomeia colunas do CSV para Open/High/Low/Close/Volume. Exemplo com ações: {\"fonte\": \"yfinance\", \"tickers\": [\"PETR4.SA\", \"VALE3.SA\"], \"coluna_preco\": \"Adj Close\"}.",
+    "_comentario": "BTC/USDT de hora em hora (Binance, baixado em 2026-09-24 e congelado; 128 horas de manutenção faltando em 9 anos). O modelo prevê o preço 24 horas à frente (horizon = 24) e é avaliado SÓ às 00:00 UTC (`avaliar_horas`), os mesmos pontos diários da série longa: as métricas são comparáveis com as dela, e o treino usa as janelas de todas as horas (24× mais amostras). `lookback` conta horas.",
     "fonte": "csv",
     "tickers": [
       "BTC"
     ],
     "arquivos": {
-      "BTC": "data-bitcoin_timedata-2023_v2 - data-bitcoin_timedata-2023_v2.csv"
+      "BTC": "data/btc-usdt_binance_1h_2017-08-17_2026-09-23.csv"
     },
-    "colunas": {
-      "number_of_trades": "Volume"
-    },
+    "colunas": {},
     "inicio": "2017-08-17",
-    "fim": "2023-08-01",
+    "fim": "2026-09-23",
     "coluna_preco": "Close",
-    "alinhamento": "intersecao"
+    "alinhamento": "intersecao",
+    "avaliar_horas": [
+      0
+    ]
   },
   "particoes": {
-    "_comentario": "Walk-forward: o fold k treina em tudo antes do bloco de validação k e valida nele (5 blocos de 180 dias). Teste: último ano (2022-08-01 → 2023-08-01), nunca usado em escolha. O Bitcoin negocia todos os dias, então 1 dia = 1 dia corrido.",
-    "teste_inicio": "2022-08-01",
+    "_comentario": "Mesmas datas da série longa: 5 blocos de validação de 365 dias e o mesmo ano de teste (2025-09-24 → 2026-09-23); o fold 1 treina em ~3 anos (2017-08 → 2020-09).",
+    "teste_inicio": "2025-09-24",
     "n_folds": 5,
     "tipo": "expanding",
     "janela_treino_max_dias": null,
-    "tamanho_validacao_dias": 180,
+    "tamanho_validacao_dias": 365,
     "embargo_dias": null
   },
   "decisao": {
@@ -46,8 +47,8 @@
     "model": "lstm",
     "features": "retornos",
     "target": "log_return",
-    "horizon": 1,
-    "lookback": 60,
+    "horizon": 24,
+    "lookback": 168,
     "scaler": "standard",
     "cell": "lstm",
     "num_layers": 1,
@@ -70,7 +71,7 @@
     "momentum": 0.9,
     "scheduler": "exponential",
     "decay_rate": 0.97,
-    "batch_size": 32,
+    "batch_size": 256,
     "grad_clip": 1.0,
     "loss_fn": "mse",
     "augment": "none",

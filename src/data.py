@@ -349,6 +349,19 @@ FEATURE_SETS = {
 TARGETS = ["log_return", "close"]
 
 
+def resolve_assets(spec):
+    """Séries usadas no treino: None = todas do estudo; nome de grupo (config → dados.grupos_ativos) ou lista."""
+    dados = common.load_study()["dados"]
+    if spec is None:
+        return list(dados["tickers"])
+    names = dados.get("grupos_ativos", {}).get(spec, spec) if isinstance(spec, str) else list(spec)
+    names = [names] if isinstance(names, str) else list(names)
+    unknown = [t for t in names if t not in dados["tickers"]]
+    if unknown:
+        raise ValueError(f"ativos desconhecidos: {unknown} (opções: {dados['tickers']}, grupos: {list(dados.get('grupos_ativos', {}))})")
+    return names
+
+
 def resolve_features(spec):
     names = FEATURE_SETS[spec] if isinstance(spec, str) else list(spec)
     unknown = [n for n in names if n not in FEATURES]
@@ -393,7 +406,7 @@ def calendar():
             dates = dates.intersection(idx)
         else:
             dates = dates.union(idx)
-    return dates.sort_values()
+    return pd.DatetimeIndex(dates.normalize().unique()).sort_values()  # em dias, mesmo com dados por hora
 
 
 def fold_boundaries():
@@ -484,7 +497,10 @@ class FoldData:
         target, h, L = params["target"], int(params["horizon"]), int(params["lookback"])
         if target not in TARGETS:
             raise ValueError(f"alvo desconhecido: {target} (opções: {TARGETS})")
-        tickers = tickers or common.load_study()["dados"]["tickers"]
+        study_dados = common.load_study()["dados"]
+        tickers = tickers or resolve_assets(params.get("ativos"))
+        avaliar = set(study_dados.get("avaliar") or tickers)  # métricas de validação/teste só nestas séries
+        horas = study_dados.get("avaliar_horas")  # dados por hora: avalia só nestas horas (ex.: [0] = diário)
         folds, test_start = fold_boundaries()
         t0, v0, v1 = folds[fold]
 
@@ -494,8 +510,10 @@ class FoldData:
         idx = {"train": [], "val": [], "test": []}
         y_a, y_b = [], []
         offset = 0
-        for tid, ticker in enumerate(tickers):
+        used = []
+        for ticker in tickers:
             df = build_frame(ticker, features, target, h)
+            tid = len(used)
             d = df.index
             n = len(df)
             pos = np.arange(n)
@@ -508,8 +526,18 @@ class FoldData:
                 train &= dd >= np.datetime64(pd.Timestamp(inicio))
             val = ok & (dd >= np.datetime64(v0)) & (tgt_date < np.datetime64(v1))
             test = ok & (dd >= np.datetime64(test_start))
-            if train.sum() == 0:
-                raise ValueError(f"{ticker}: fold {fold} sem amostras de treino (lookback/histórico curtos?)")
+            if ticker not in avaliar:  # série só de treino
+                val &= False
+                test &= False
+            if horas is not None:
+                on_hour = np.isin(pd.DatetimeIndex(dd).hour, horas)
+                val &= on_hour
+                test &= on_hour
+            if train.sum() < max(2 * L, 30):
+                if ticker in avaliar:
+                    raise ValueError(f"{ticker}: fold {fold} sem amostras de treino (lookback/histórico curtos?)")
+                continue  # moeda que ainda não existia (ou quase) neste fold: fica de fora só aqui
+            used.append(ticker)
 
             x = df[features].to_numpy(np.float64)
             fscaler = _Scaler(params["scaler"]).fit(x[pos[train].min(): pos[train].max() + 1])
@@ -536,8 +564,10 @@ class FoldData:
             offset += n
 
         cat = np.concatenate
-        self.tickers, self.features, self.lookback, self.target = tickers, features, L, target
+        self.tickers, self.features, self.lookback, self.target = used, features, L, target
         self.norm_janela = bool(params.get("norm_janela"))
+        # passo entre pontos avaliados consecutivos (POCID): 1 linha por dia; com dados por hora avaliados 1×/dia, 24
+        self.row_step = 24 if horas is not None and len(horas) == 1 else 1
         self.vol = cat(vols)
         self.n_features = len(features)
         self.device = device

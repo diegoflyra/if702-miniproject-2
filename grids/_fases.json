@@ -114,6 +114,60 @@
         "No teste funcional (2 folds, 3 épocas), todos os componentes novos treinaram; a receita do paper com alvo em preço extrapolou (Theil 498), como o alvo em preço na fase 1."
       ],
       "ressalva": "Mesmo teste das fases 3 e 4, já visto: uma melhora aqui precisa ser clara (além do ruído e consistente entre folds) para ser convincente."
+    },
+    {
+      "id": "fase6",
+      "titulo": "Fase 6 — Lacunas da fase 5: ativações, dropout recorrente, horizonte e TimeGAN",
+      "estudo": "config/estudo_btc_longo.json",
+      "motivacao": "Na fase 5, o campeão de arquitetura saiu bidirecional e a célula LSTM própria não suportava bidirecional: 72 combinações de ativações e todas as 160 com dropout recorrente foram descartadas. A célula própria agora é bidirecional, e os dois blocos são refeitos a partir do campeão da fase 5. A fase também mede o efeito do horizonte de previsão (1, 5 e 20 dias) e, como bônus, dados sintéticos com TimeGAN, com diagnósticos para saber se o gerador aprende o BTC ou só o ruído.",
+      "blocos": [
+        "f6_b1_ativacao_init",
+        "f6_b2_regularizacao",
+        "f6_horizonte",
+        "f6_bonus_timegan"
+      ],
+      "campeao_principal": "f6_b2_regularizacao",
+      "bonus": [
+        "f6_horizonte",
+        "f6_bonus_timegan"
+      ],
+      "descoberta": [
+        "Ainda não executada."
+      ]
+    },
+    {
+      "id": "fase7",
+      "titulo": "Fase 7 — Mais dados reais: várias criptomoedas no treino",
+      "estudo": "config/estudo_multicripto.json",
+      "motivacao": "A série longa (fase 3) foi a única mudança que moveu o teste: mais dado real. Esta fase multiplica os exemplos de treino com as janelas de outras 14 criptomoedas (ETH, LTC, XRP, BNB, DOGE, BCH, XLM, ADA, LINK, TRX, SOL, XMR, DASH, ETC), num único LSTM, avaliado sempre no BTC. É o análogo, nesta série, do data augmentation da CNN, com dados reais em vez de transformados. Como bônus, o TimeGAN sobre o conjunto.",
+      "blocos": [
+        "f7_referencia",
+        "f7_ativos",
+        "f7_bonus_timegan"
+      ],
+      "campeao_principal": "f7_ativos",
+      "bonus": [
+        "f7_bonus_timegan"
+      ],
+      "descoberta": [
+        "Ainda não executada."
+      ],
+      "ressalva": "Mesmo ano de teste das fases 3 a 6."
+    },
+    {
+      "id": "fase8",
+      "titulo": "Fase 8 — Mais dados reais: dados por hora",
+      "estudo": "config/estudo_btc_horario.json",
+      "motivacao": "Outra forma de ter mais dado real sobre o mesmo ativo: velas de hora em hora (Binance, desde 2017). O modelo continua prevendo o preço do dia seguinte e é avaliado nos mesmos pontos diários, mas treina com uma janela por hora (24× mais exemplos) e vê o que aconteceu dentro de cada dia.",
+      "blocos": [
+        "f8_referencia",
+        "f8_janela"
+      ],
+      "campeao_principal": "f8_janela",
+      "descoberta": [
+        "Ainda não executada."
+      ],
+      "ressalva": "O treino começa em 2017-08 (início dos dados da Binance), e não em 2014 como na série longa."
     }
   ],
   "proximos_passos": [

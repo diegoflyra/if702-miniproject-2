@@ -14,6 +14,8 @@ Especificação do bloco (grids/*.json), campos principais:
   triagem        true (padrão): folds de triagem para todos, K folds para as n finalistas; false: K folds para todos
   n_finalistas   sobrescreve config/estudo.json → decisao.n_finalistas
   restricoes     {"max_parametros": N, "expr": ["hidden_size * num_layers <= 512"]}
+  base_de        {"estudo", "bloco", "manter": [...]}: base = campeão de um bloco de OUTRO estudo
+  metrica_decisao  decide este bloco por outra métrica (ex.: val/theil, comparável entre horizontes)
   configs_de     [{"_nome", "estudo", "bloco", "sobrescrever"}]: campeão de um bloco de OUTRO estudo (transplante)
   ablacao        {"ignorar": [...]}: para cada hiperparâmetro em que a base difere do padrão do estudo, treina a base
                  com só aquele valor desfeito (quanto cada mudança contribui, medido de forma pareada)
@@ -49,8 +51,9 @@ RECURRENT_ONLY = {"cell", "hidden_size", "num_layers", "bidirectional", "pooling
                   "residual", "recurrent_dropout", "conv_layers", "conv_filters", "conv_kernel"}
 TRAINING_ONLY = {"dropout", "optimizer", "lr", "momentum", "weight_decay", "scheduler", "decay_rate", "batch_size",
                  "grad_clip", "loss_fn", "huber_delta", "loss_lambda", "epochs", "patience", "monitor", "eval_train",
-                 "augment", "aug_strength", "aug_prob"}
-IGNORED_FOR_NAIVE = RECURRENT_ONLY | TRAINING_ONLY | {"scaler", "seed", "alvo_vol", "norm_janela"}
+                 "augment", "aug_strength", "aug_prob", "timegan", "timegan_ratio", "timegan_iter", "timegan_hidden"}
+IGNORED_FOR_NAIVE = RECURRENT_ONLY | TRAINING_ONLY | {"scaler", "seed", "alvo_vol", "norm_janela", "timegan",
+                                                     "timegan_ratio", "timegan_iter", "timegan_hidden"}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -89,6 +92,20 @@ def resolve_base(spec, dry=False):
             base.update(best["params"])
             origem = f"campeão de {best['bloco']} ({best['exp_name']})"
             spec["_origem_exp"] = best["exp_name"]
+    if spec.get("base_de"):
+        # base = campeão de um bloco de OUTRO estudo (ex.: o melhor LSTM da série longa levado para várias moedas)
+        src = spec["base_de"]
+        other = os.path.join(common.study_output_dir(src["estudo"]), "_grids", src["bloco"], "campeao.json")
+        champ = common.load_json(other)
+        if champ is None:
+            if not dry:
+                raise RuntimeError(f"campeão de {src['bloco']} ({src['estudo']}) não encontrado em {other}; rode aquela fase antes")
+            print(f"[dry] sem campeão de {src['bloco']} ({src['estudo']}); usando o padrão do estudo como base provisória")
+        else:
+            keep = {k: base[k] for k in src.get("manter", [])}  # parâmetros próprios deste estudo (ex.: ativos)
+            base.update(champ["params"])
+            base.update(keep)
+            origem = f"campeão de {src['bloco']} ({src['estudo']}: {champ['exp_name']})"
     return base, origem
 
 
@@ -170,6 +187,11 @@ def effective(p):
         q.pop("loss_lambda", None)
     if q.get("target") != "log_return":
         q.pop("alvo_vol", None)
+    if q.get("timegan", "none") == "none":
+        for k in ("timegan_ratio", "timegan_iter", "timegan_hidden"):
+            q.pop(k, None)
+    elif q.get("timegan") == "so_sintetico":
+        q.pop("timegan_ratio", None)
     if not q.get("fc_neurons"):
         q.pop("activation", None)  # sem camada densa, a ativação densa não é usada
     if q.get("cell", "lstm") != "lstm":
@@ -435,6 +457,7 @@ def run_block(spec_path, workers_per_gpu=1, cpu_workers=1, dry=False, max_config
     best = final.iloc[0]
     if bool(best["divergiu"]):
         print(f"ATENÇÃO: todas as configurações finais de {block} divergiram; o campeão abaixo é só o menos ruim")
+    metric = spec.get("metrica_decisao", metric)
     champion = {"bloco": block, "exp_name": best["exp_name"], "divergiu": bool(best["divergiu"]),
                 "params": common.load_json(os.path.join(bdir, "params", best["exp_name"] + ".json")),
                 "metricas": {k: best[k] for k in final.columns if k.endswith(("_mean", "_std"))},
@@ -459,7 +482,8 @@ def main():
     parser.add_argument("--max_configs", type=int, default=None, help="(teste) limita o nº de configurações")
     parser.add_argument("--epochs", type=int, default=None, help="(teste) sobrescreve epochs")
     args = parser.parse_args()
-    overrides = {"epochs": args.epochs} if args.epochs else None
+    # modo teste (--epochs): o TimeGAN também treina pouco (o objetivo é validar o caminho, não o gerador)
+    overrides = {"epochs": args.epochs, "timegan_iter": 100} if args.epochs else None
     run_block(args.spec, args.workers_per_gpu, args.cpu_workers, args.dry, args.max_configs, overrides)
 
 

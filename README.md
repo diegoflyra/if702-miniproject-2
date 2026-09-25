@@ -54,12 +54,21 @@ de aprendizagem; o decaimento dos pesos é o `weight_decay` (L2), testado junto 
    checagem → regularização (dropout, entre camadas, na entrada, recorrente; weight decay; corte de gradiente) →
    épocas → augmentation → ablação → fusão de modelos (média, desempenho, diversidade cognitiva; escore e rank).
 
+6. **Fase 6 — Lacunas da fase 5** (série longa): ativações e regularização refeitas (a célula LSTM própria passou a
+   suportar bidirecional, então ativações ≠ tanh e dropout recorrente entram de verdade), horizonte de 1, 5 e 20 dias e
+   bônus TimeGAN (treinado dentro de cada fold, com diagnósticos: fatos estilizados, score discriminativo, TSTR).
+7. **Fase 7 — Várias criptomoedas** (`config/estudo_multicripto.json`, `outputs_multicripto/`): o melhor LSTM da fase 6
+   treinado com as janelas de 1, 2, 5, 10 ou 15 moedas, avaliado só no BTC; bônus TimeGAN sobre o conjunto.
+8. **Fase 8 — Dados por hora** (`config/estudo_btc_horario.json`, `outputs_btc_horario/`): BTC/USDT de hora em hora
+   (Binance, desde 2017), alvo 24 h à frente, avaliado só às 00:00 UTC (os mesmos pontos da série diária).
+
 `FASES` na célula de configuração escolhe quais fases treinam; as outras só são lidas, então dá para reaproveitar uma
 fase já rodada (ex.: a fase 1 do Kaggle) colocando a pasta de resultados dela no lugar ou usando `RESUME_FROM`.
 
 ## Dados
 
 - Série curta: `data-bitcoin_timedata-2023_v2 - ….csv` (raiz). Série longa: `data/btc-usd_yahoo_2014-09-17_2026-09-23.csv`.
+- Várias criptomoedas: `data/cripto/<MOEDA>.csv` (15 moedas, Yahoo). Por hora: `data/btc-usdt_binance_1h_2017-08-17_2026-09-23.csv`.
 - `data/externos/`: funding (BitMEX, desde 2016-05), on-chain (blockchain.com, desde 2009) e medo e ganância
   (alternative.me, desde 2018-02), congelados. Para atualizar: `python src/external.py --baixar`.
 
@@ -85,6 +94,7 @@ src/data.py               preços (cache → Kaggle Input → yfinance), feature
 src/external.py           séries externas congeladas em data/externos/: funding (BitMEX), on-chain (blockchain.com), medo e ganância
 src/models.py             LSTM configurável (ativação da célula, inicialização, densas), GRU, regressão linear e referências ingênuas
 src/metrics.py            mse, rmse, mae, mape, theil, POCID, acurácia direcional, skill, r2, IC — gerais e por série
+src/timegan.py            TimeGAN (dados sintéticos por fold) e diagnósticos do gerador
 src/augment.py            data augmentation de séries (só no treino): jitter, scaling, magwarp, timewarp, permutation, slicing
 src/train.py              treina UMA configuração nos folds pedidos; grava tudo em disco a cada época; retomável
 src/grid_search.py        executa UM bloco: expande (grid ou aleatória), herda o campeão, paraleliza nas GPUs, triagem → confirmação

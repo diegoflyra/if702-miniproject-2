@@ -81,6 +81,9 @@ def ranking(block, stage="final", with_test=False):
     if cfg.empty:
         return pd.DataFrame()
     spec = common.load_json(os.path.join(block_dir(block), "spec.json"), {})
+    if spec.get("metrica_decisao"):  # o bloco pode decidir por outra métrica (ex.: Theil entre horizontes)
+        metric = spec["metrica_decisao"]
+        mode = "min" if metric.split("/")[-1] in ("rmse", "mse", "mae", "mape", "theil", "loss", "arv", "smape", "mase") else "max"
     all_folds = list(range(1, common.n_folds() + 1))
     folds = triage_folds if (stage == "triagem" and spec.get("triagem_efetiva", spec.get("triagem", True))) else all_folds
     splits = ("val", "gap", "test") if with_test else ("val", "gap")
