@@ -26,12 +26,28 @@ def load_dotenv(path=os.path.join(REPO_DIR, ".env")):
 
 
 load_dotenv()
-CONFIG_PATH = os.environ.get("ESTUDO_CONFIG", os.path.join(REPO_DIR, "config", "estudo.json"))
 DATA_DIR = os.environ.get("EXP_DATA_DIR", os.path.join(REPO_DIR, "data"))
 
 
+def config_path():
+    """Configuração do estudo ativo: ESTUDO_CONFIG (relido a cada chamada: o notebook troca de estudo entre fases)."""
+    path = os.environ.get("ESTUDO_CONFIG", os.path.join("config", "estudo.json"))
+    return path if os.path.isabs(path) else os.path.join(REPO_DIR, path)
+
+
+def study_output_dir(config=None):
+    """Pasta de resultados de um estudo: EXP_OUTPUT_ROOT (padrão: raiz do repo) / `saida` do estudo + EXP_OUTPUT_SUFFIX.
+
+    EXP_OUTPUT_DIR, se definido, vale para o estudo ativo (uso avulso pela linha de comando).
+    """
+    study = load_json(config if config and os.path.isabs(config) else os.path.join(REPO_DIR, config)) if config else load_study()
+    root = os.environ.get("EXP_OUTPUT_ROOT", REPO_DIR)
+    return os.path.join(root, study.get("saida", "outputs") + os.environ.get("EXP_OUTPUT_SUFFIX", ""))
+
+
 def output_dir():
-    path = os.environ.get("EXP_OUTPUT_DIR", os.path.join(REPO_DIR, "outputs"))
+    """Resultados do estudo ativo: estudos diferentes nunca se misturam."""
+    path = os.environ.get("EXP_OUTPUT_DIR") or study_output_dir()
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -73,10 +89,15 @@ def _json_default(obj):
 
 
 def load_study():
-    study = load_json(CONFIG_PATH)
+    study = load_json(config_path())
     if study is None:
-        raise FileNotFoundError(f"Configuração do estudo não encontrada: {CONFIG_PATH}")
+        raise FileNotFoundError(f"Configuração do estudo não encontrada: {config_path()}")
     return study
+
+
+def phases():
+    """Fases do estudo (grids/_fases.json), na ordem das descobertas."""
+    return load_json(os.path.join(REPO_DIR, "grids", "_fases.json"))["fases"]
 
 
 def default_params():
@@ -87,6 +108,20 @@ def decision():
     """(métrica, modo, folds de triagem, nº de finalistas) definidos em config/estudo.json."""
     d = load_study()["decisao"]
     return d["metrica"], d["modo"], list(d["triagem_folds"]), int(d["n_finalistas"])
+
+
+def divergence_limit():
+    """Theil de validação acima do qual um fold é considerado divergente (config/estudo.json → decisao)."""
+    return float(load_study()["decisao"].get("divergencia_theil", 10.0))
+
+
+def fold_diverged(val_metrics):
+    """True se o fold divergiu: métrica de decisão não finita ou val/theil acima do limite."""
+    metric = load_study()["decisao"]["metrica"]
+    v, theil = val_metrics.get(metric), val_metrics.get("val/theil")
+    if v is None or not np.isfinite(v):
+        return True
+    return theil is not None and (not np.isfinite(theil) or theil > divergence_limit())
 
 
 def n_folds():

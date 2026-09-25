@@ -1,0 +1,116 @@
+{
+  "bloco": "f5_b3_arquitetura",
+  "titulo": "Fase 5 · Bloco 3 — Arquitetura",
+  "pergunta": "Que arquitetura recorrente funciona melhor?",
+  "descricao": "Célula LSTM ou GRU; unidirecional ou bidirecional; pilha de camadas (incluindo tamanhos decrescentes, como o 100 → 50 do paper); resumo da sequência (último estado, média, atenção); LayerNorm; conexões residuais; convoluções 1D antes da recorrência (CNN-LSTM) e camadas densas. Espaço de 2 × 2 × 6 × 3 × 2 × 2 × 3 × 3 = 2.592 combinações, com busca aleatória de 60.",
+  "observar": "Quais eixos explicam a variação (importância), e se alguma arquitetura bate a pilha simples além do ruído.",
+  "analise": [
+    "LSTM × GRU:",
+    "Bidirecional:",
+    "Profundidade e pilhas decrescentes:",
+    "Atenção:",
+    "Residual e LayerNorm:",
+    "CNN-LSTM:"
+  ],
+  "herda_de": [
+    "f5_b2_normalizacao"
+  ],
+  "eixos": {
+    "cell": [
+      "lstm",
+      "gru"
+    ],
+    "bidirectional": [
+      false,
+      true
+    ],
+    "pilha": [
+      {
+        "_rotulo": "1x50",
+        "hidden_sizes": [],
+        "num_layers": 1,
+        "hidden_size": 50
+      },
+      {
+        "_rotulo": "1x100",
+        "hidden_sizes": [],
+        "num_layers": 1,
+        "hidden_size": 100
+      },
+      {
+        "_rotulo": "2x64",
+        "hidden_sizes": [],
+        "num_layers": 2,
+        "hidden_size": 64
+      },
+      {
+        "_rotulo": "3x64",
+        "hidden_sizes": [],
+        "num_layers": 3,
+        "hidden_size": 64
+      },
+      {
+        "_rotulo": "100-50",
+        "hidden_sizes": [
+          100,
+          50
+        ]
+      },
+      {
+        "_rotulo": "128-64-32",
+        "hidden_sizes": [
+          128,
+          64,
+          32
+        ]
+      }
+    ],
+    "pooling": [
+      "last",
+      "mean",
+      "attention"
+    ],
+    "layer_norm": [
+      false,
+      true
+    ],
+    "residual": [
+      false,
+      true
+    ],
+    "conv_layers": [
+      0,
+      1,
+      2
+    ],
+    "fc_neurons": [
+      [],
+      [
+        10
+      ],
+      [
+        25,
+        10
+      ]
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 60,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "restricoes": {
+    "max_parametros": 2000000
+  },
+  "heatmaps": [
+    {
+      "row": "pilha",
+      "col": "cell"
+    },
+    {
+      "row": "pooling",
+      "col": "conv_layers"
+    }
+  ]
+}

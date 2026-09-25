@@ -1,0 +1,51 @@
+{
+  "bloco": "f5_b2_normalizacao",
+  "titulo": "Fase 5 · Bloco 2 — Normalização e período de treino",
+  "pergunta": "Como normalizar entradas e alvo, e com quanto histórico treinar?",
+  "descricao": "**Scaler** das features e do alvo (ajustado só no treino de cada fold): z-score, min-max [0, 1] (como no paper), robusto (mediana e IQR) ou nenhum. **Alvo pela volatilidade:** prever o retorno dividido pela volatilidade dos últimos 20 dias e multiplicar de volta (retornos em dias calmos e agitados ficam na mesma escala). **Normalização por janela:** cada janela vira o z-score dela mesma. **Início do treino:** todo o histórico, a partir de 2018 ou a partir de 2020-03 (pós-COVID, como no paper). Grid de 4 × 2 × 2 × 3 = 48.",
+  "observar": "Se a normalização muda o resultado além do ruído, e se descartar o histórico antigo ajuda (regimes recentes) ou atrapalha (menos dados).",
+  "analise": [
+    "Scaler:",
+    "Alvo normalizado pela volatilidade:",
+    "Normalização por janela:",
+    "Início do treino (mais dados × dados mais recentes):"
+  ],
+  "herda_de": [
+    "f5_b1_entrada"
+  ],
+  "eixos": {
+    "scaler": [
+      "standard",
+      "minmax",
+      "robust",
+      "none"
+    ],
+    "alvo_vol": [
+      false,
+      true
+    ],
+    "norm_janela": [
+      false,
+      true
+    ],
+    "treino_inicio": [
+      null,
+      "2018-01-01",
+      "2020-03-11"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "scaler",
+      "col": "treino_inicio"
+    },
+    {
+      "row": "alvo_vol",
+      "col": "norm_janela"
+    }
+  ]
+}

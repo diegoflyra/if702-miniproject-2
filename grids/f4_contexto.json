@@ -1,0 +1,30 @@
+{
+  "bloco": "f4_contexto",
+  "titulo": "Fase 4 · Contexto externo ao preço",
+  "pergunta": "Informação de fora da série de preços (calendário, derivativos, rede, sentimento) ajuda a prever o retorno?",
+  "descricao": "Partindo do LSTM padrão (o melhor da fase 3), cada conjunto acrescenta ao retorno diário uma fonte de contexto. **Calendário:** seno e cosseno do dia da semana (o BTC negocia 7 dias por semana, e o fim de semana tem menos liquidez). **Derivativos:** taxa de financiamento do perpétuo da BitMEX (média do dia), seu z-score de 30 dias (extremos precedem liquidações) e um indicador de disponibilidade (o dado começa em 2016-05). **On-chain:** variação diária do número de transações e de endereços ativos, z-score de 30 dias do volume transacionado em US$ e variação de 7 dias do hash rate (blockchain.com). **Sentimento:** índice de medo e ganância, sua variação diária e um indicador de disponibilidade (começa em 2018-02). **Externos:** todos juntos. Antes do início de cada fonte, o valor é 0 e o indicador de disponibilidade vale 0. Open interest e long/short ratio ficaram de fora porque as APIs gratuitas só guardam 30 dias; netflows de exchanges e transações de baleias só existem em serviços pagos. Os dados estão congelados em `data/externos/`.",
+  "observar": "Se alguma fonte bate o retorno sozinho além do ruído entre seeds, e se juntar tudo ajuda ou só aumenta o sobreajuste.",
+  "analise": [
+    "Alguma fonte de contexto melhorou a validação além do ruído?",
+    "Derivativos (funding) × on-chain × sentimento: qual trouxe mais informação?",
+    "Juntar tudo ajudou ou atrapalhou?",
+    "O efeito aparece também na POCID (direção)?"
+  ],
+  "herda_de": [],
+  "triagem": false,
+  "eixos": {
+    "features": [
+      "retornos",
+      "calendario",
+      "derivativos",
+      "onchain",
+      "sentimento",
+      "externos"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

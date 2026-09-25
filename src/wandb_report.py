@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import results  # noqa: E402
 
-CHART_METRICS = ["rmse", "mse", "mae", "mape", "theil", "pocid", "da"]
+CHART_METRICS = ["rmse", "mse", "mae", "mape", "theil", "pocid", "da", "arv", "smape", "mase", "rmse_preco"]
 
 
 def enabled():
@@ -68,7 +68,11 @@ def log_block(block):
     df = results.ranking(block, stage)
     if df.empty:
         return
-    axes = [a for a in spec.get("eixos", {}) if a in df and df[a].astype(str).nunique() > 1]
+    if "divergiu" in df:  # divergentes distorcem as médias dos gráficos; ficam só na tabela `ranking`
+        df_all, df = df, df[~df["divergiu"]].reset_index(drop=True)
+        if df.empty:
+            df = df_all
+    axes = [a for a in spec.get("eixos", {}) if a in df and df[a].astype(object).where(df[a].notna(), '—').astype(str).nunique() > 1]
     label_cols = axes or [c for c in ("desfeito", "origem", "config") if c in df][:1]
     for c in ("desfeito", "origem", "config"):
         if c in df:
@@ -85,7 +89,7 @@ def log_block(block):
         payload = {"ranking": wandb.Table(dataframe=table)}
 
         for axis in label_cols:
-            groups = df.groupby(df[axis].astype(str))
+            groups = df.groupby(df[axis].astype(object).where(df[axis].notna(), '—').astype(str))
             numeric = _as_number(df[axis]) if axis in axes else None
             for col in metric_cols:
                 m = col.split("/")[1].replace("_mean", "")
@@ -124,8 +128,8 @@ def log_block(block):
         run.finish()
 
 
-def log_study(final_block, report_blocks):
-    """Run final: cadeia de decisões, ruído entre seeds e relatório final (validação × teste)."""
+def log_study(final_block, report_blocks, nome="estudo__resumo"):
+    """Run de resumo de uma fase: cadeia de decisões, ruído entre seeds e relatório final (validação × teste)."""
     if not enabled():
         return
     import matplotlib
@@ -134,11 +138,13 @@ def log_study(final_block, report_blocks):
     import report_utils as rep
     import wandb
 
-    run = _init("estudo__resumo", "estudo", {"campeao_principal": final_block})
+    run = _init(nome, "estudo", {"campeao_principal": final_block})
     try:
         payload = {}
-        chain = rep.decision_chain(final_block)
-        payload["cadeia_decisoes"] = wandb.Table(dataframe=chain.astype(str))
+        spec = common.load_json(os.path.join(results.block_dir(final_block), "spec.json"), {})
+        chain = rep.decision_chain(final_block) if spec.get("herda_de") else None
+        if chain is not None:
+            payload["cadeia_decisoes"] = wandb.Table(dataframe=chain.astype(str))
         img = _image(os.path.join(common.report_dir(), f"cadeia_decisoes_{final_block}.png"))
         if img:
             payload["cadeia_decisoes_grafico"] = img

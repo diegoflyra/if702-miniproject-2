@@ -14,6 +14,7 @@ Especificação do bloco (grids/*.json), campos principais:
   triagem        true (padrão): folds de triagem para todos, K folds para as n finalistas; false: K folds para todos
   n_finalistas   sobrescreve config/estudo.json → decisao.n_finalistas
   restricoes     {"max_parametros": N, "expr": ["hidden_size * num_layers <= 512"]}
+  configs_de     [{"_nome", "estudo", "bloco", "sobrescrever"}]: campeão de um bloco de OUTRO estudo (transplante)
   ablacao        {"ignorar": [...]}: para cada hiperparâmetro em que a base difere do padrão do estudo, treina a base
                  com só aquele valor desfeito (quanto cada mudança contribui, medido de forma pareada)
 
@@ -44,11 +45,12 @@ import results  # noqa: E402
 
 SRC = os.path.dirname(os.path.abspath(__file__))
 RECURRENT_ONLY = {"cell", "hidden_size", "num_layers", "bidirectional", "pooling", "fc_neurons", "activation",
-                  "lstm_activation", "weight_init", "layer_norm", "rnn_dropout", "input_dropout"}
-IGNORED_FOR_NAIVE = RECURRENT_ONLY | {"dropout", "optimizer", "lr", "momentum", "weight_decay", "scheduler", "decay_rate",
-                                      "batch_size", "grad_clip", "loss_fn", "epochs", "patience", "monitor",
-                                      "eval_train", "scaler", "seed", "augment", "aug_strength",
-                                      "aug_prob"}
+                  "lstm_activation", "weight_init", "layer_norm", "rnn_dropout", "input_dropout", "hidden_sizes",
+                  "residual", "recurrent_dropout", "conv_layers", "conv_filters", "conv_kernel"}
+TRAINING_ONLY = {"dropout", "optimizer", "lr", "momentum", "weight_decay", "scheduler", "decay_rate", "batch_size",
+                 "grad_clip", "loss_fn", "huber_delta", "loss_lambda", "epochs", "patience", "monitor", "eval_train",
+                 "augment", "aug_strength", "aug_prob"}
+IGNORED_FOR_NAIVE = RECURRENT_ONLY | TRAINING_ONLY | {"scaler", "seed", "alvo_vol", "norm_janela"}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -82,7 +84,8 @@ def resolve_base(spec, dry=False):
                 raise RuntimeError(f"campeão ainda não definido para {missing}: rode esses blocos antes")
             print(f"[dry] sem campeão de {missing}; usando o padrão do estudo como base provisória")
         if found:
-            best = sorted(found, key=lambda c: c["metricas"][f"{metric}_mean"] * (1 if mode == "min" else -1))[0]
+            best = sorted(found, key=lambda c: (bool(c.get("divergiu")),
+                                                c["metricas"][f"{metric}_mean"] * (1 if mode == "min" else -1)))[0]
             base.update(best["params"])
             origem = f"campeão de {best['bloco']} ({best['exp_name']})"
             spec["_origem_exp"] = best["exp_name"]
@@ -140,11 +143,33 @@ def effective(p):
         for k in IGNORED_FOR_NAIVE:
             q.pop(k, None)
         return q
+    if q["model"] in models.SKLEARN_MODELS:  # sem épocas nem rede: só entrada, alvo e normalização importam
+        for k in RECURRENT_ONLY | TRAINING_ONLY:
+            q.pop(k, None)
+        return q
+    if q["model"] == "cnn1d":
+        for k in ("cell", "hidden_size", "num_layers", "bidirectional", "pooling", "lstm_activation", "rnn_dropout",
+                  "recurrent_dropout", "hidden_sizes", "residual", "layer_norm", "conv_layers"):
+            q.pop(k, None)
     if q["model"] == "linear":
         for k in RECURRENT_ONLY:
             q.pop(k, None)
+    if q.get("hidden_sizes"):  # pilha explícita: substitui hidden_size × num_layers
+        q.pop("hidden_size", None)
+        q["num_layers"] = len(q["hidden_sizes"])
     if int(q.get("num_layers", 1)) == 1:
         q["rnn_dropout"] = 0.0  # dropout entre camadas recorrentes não existe com uma camada
+    if q.get("cell", "lstm") != "lstm":
+        q.pop("recurrent_dropout", None)
+    if int(q.get("conv_layers", 0)) == 0 and q.get("model") != "cnn1d":
+        q.pop("conv_filters", None)
+        q.pop("conv_kernel", None)
+    if q.get("loss_fn") != "huber":
+        q.pop("huber_delta", None)
+    if q.get("loss_fn") != "direcional":
+        q.pop("loss_lambda", None)
+    if q.get("target") != "log_return":
+        q.pop("alvo_vol", None)
     if not q.get("fc_neurons"):
         q.pop("activation", None)  # sem camada densa, a ativação densa não é usada
     if q.get("cell", "lstm") != "lstm":
@@ -181,6 +206,16 @@ def expand(spec, base):
         name = extra.pop("_nome")
         p = {**copy.deepcopy(base), **extra}
         candidates.append({"exp_name": f"{block}__{name}", "rotulos": {"config": name}, "params": p})
+
+    for item in spec.get("configs_de", []):
+        # configuração campeã de OUTRO estudo (ex.: transplante do campeão da fase 1 para a série longa)
+        other = os.path.join(common.study_output_dir(item["estudo"]), "_grids", item["bloco"], "campeao.json")
+        champ = common.load_json(other)
+        if champ is None:
+            raise RuntimeError(f"{block}: campeão de {item['bloco']} ({item['estudo']}) não encontrado em {other}; "
+                               "rode aquela fase antes (ou retome os resultados dela)")
+        p = {**common.default_params(), **champ["params"], **item.get("sobrescrever", {})}
+        candidates.append({"exp_name": f"{block}__{item['_nome']}", "rotulos": {"config": item["_nome"]}, "params": p})
 
     if spec.get("checagem"):
         chk = spec["checagem"]
@@ -383,7 +418,10 @@ def run_block(spec_path, workers_per_gpu=1, cpu_workers=1, dry=False, max_config
     if use_triage:
         tri = results.ranking(block, "triagem")
         tri.to_csv(os.path.join(bdir, "ranking_triagem.csv"), index=False)
-        finalists = list(tri["exp_name"].head(n_final))
+        finalists = list(tri.loc[~tri["divergiu"], "exp_name"].head(n_final)) or list(tri["exp_name"].head(n_final))
+        n_div = int(tri["divergiu"].sum())
+        if n_div:
+            print(f"  {n_div} configurações divergiram na triagem (val/theil > {common.divergence_limit():g}); fora da final")
         # a referência pareada (base) sempre completa os K folds, se existir
         finalists += [c["exp_name"] for c in kept if c["e_base"] and c["exp_name"] not in finalists]
         print(f"Finalistas: {finalists}")
@@ -395,7 +433,9 @@ def run_block(spec_path, workers_per_gpu=1, cpu_workers=1, dry=False, max_config
     if final.empty:
         raise RuntimeError(f"nenhuma configuração de {block} completou os {len(all_folds)} folds")
     best = final.iloc[0]
-    champion = {"bloco": block, "exp_name": best["exp_name"],
+    if bool(best["divergiu"]):
+        print(f"ATENÇÃO: todas as configurações finais de {block} divergiram; o campeão abaixo é só o menos ruim")
+    champion = {"bloco": block, "exp_name": best["exp_name"], "divergiu": bool(best["divergiu"]),
                 "params": common.load_json(os.path.join(bdir, "params", best["exp_name"] + ".json")),
                 "metricas": {k: best[k] for k in final.columns if k.endswith(("_mean", "_std"))},
                 "metrica_decisao": metric, "modo": mode, "falhas": failed}

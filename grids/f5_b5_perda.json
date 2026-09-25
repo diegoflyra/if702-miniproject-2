@@ -1,0 +1,67 @@
+{
+  "bloco": "f5_b5_perda",
+  "titulo": "Fase 5 · Bloco 5 — Função de erro do treino",
+  "pergunta": "Com qual função de erro a rede aprende melhor?",
+  "descricao": "MSE (o padrão), MAE, Huber com três δ (quadrática perto de zero, linear nos extremos: menos sensível aos dias de movimento extremo), log-cosh (parecida com Huber, mas suave) e uma perda direcional: MSE + λ·média(relu(−ŷ·y)), que penaliza prever o sinal errado. Todas rodam os 5 folds.",
+  "observar": "O efeito na métrica de decisão e, principalmente, na POCID: a perda direcional deveria melhorar o acerto de direção.",
+  "analise": [
+    "Alguma função de erro bateu o MSE além do ruído?",
+    "A perda direcional melhorou a POCID?",
+    "Huber: qual δ?"
+  ],
+  "herda_de": [
+    "f5_b4_ativacao_init"
+  ],
+  "triagem": false,
+  "eixos": {
+    "perda": [
+      {
+        "_rotulo": "mse",
+        "loss_fn": "mse"
+      },
+      {
+        "_rotulo": "mae",
+        "loss_fn": "mae"
+      },
+      {
+        "_rotulo": "huber δ=0,5",
+        "loss_fn": "huber",
+        "huber_delta": 0.5
+      },
+      {
+        "_rotulo": "huber δ=1",
+        "loss_fn": "huber",
+        "huber_delta": 1.0
+      },
+      {
+        "_rotulo": "huber δ=2",
+        "loss_fn": "huber",
+        "huber_delta": 2.0
+      },
+      {
+        "_rotulo": "logcosh",
+        "loss_fn": "logcosh"
+      },
+      {
+        "_rotulo": "direcional λ=0,1",
+        "loss_fn": "direcional",
+        "loss_lambda": 0.1
+      },
+      {
+        "_rotulo": "direcional λ=0,5",
+        "loss_fn": "direcional",
+        "loss_lambda": 0.5
+      },
+      {
+        "_rotulo": "direcional λ=1",
+        "loss_fn": "direcional",
+        "loss_lambda": 1.0
+      }
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

@@ -44,6 +44,28 @@ def _axes(block):
     return [c for c in cfg.columns if c not in ("exp_name", "e_base", "num_parameters")]
 
 
+def _stable(df, block):
+    """Tira as configurações com fold divergente das médias (elas distorcem tudo) e avisa quantas foram."""
+    if df.empty or "divergiu" not in df:
+        return df
+    n = int(df["divergiu"].sum())
+    if n:
+        print(f"{block}: {n} de {len(df)} configurações divergiram (val/theil > {common.divergence_limit():g}) "
+              "e ficam fora das médias abaixo; veja rep.diverged_configs().")
+    return df[~df["divergiu"]].reset_index(drop=True)
+
+
+def diverged_configs(block, stage="triagem"):
+    """Configurações com algum fold divergente, com os hiperparâmetros que as distinguem."""
+    df = results.ranking(block, stage)
+    if df.empty:
+        df = results.ranking(block, "final")
+    if df.empty or "divergiu" not in df or not df["divergiu"].any():
+        print(f"{block}: nenhuma configuração divergiu.")
+        return pd.DataFrame()
+    return df[df["divergiu"]][["exp_name"] + _axes(block) + ["folds_divergentes", "val/theil_mean"]]
+
+
 # --------------------------------------------------------------------------------------------------
 # Rankings e visão do espaço de busca (só validação)
 # --------------------------------------------------------------------------------------------------
@@ -74,6 +96,11 @@ def discarded_configs(block):
     return df
 
 
+def _txt(col):
+    """Coluna de rótulos como texto, com ausentes explícitos (o pandas 3 mantém NaN depois de astype(str))."""
+    return col.astype(object).where(col.notna(), "—").astype(str)
+
+
 def _label(df, cols):
     cols = [cols] if isinstance(cols, str) else list(cols)
     return df[cols].fillna("—").astype(str).agg(" | ".join, axis=1), " | ".join(cols)
@@ -91,17 +118,17 @@ def heatmap(block, row, col, facet=None, value=None, stage="triagem"):
         print(f"{block}: sem resultados.")
         return
     value = value or f"{_metric()}_mean"
-    df = df.copy()
+    df = _stable(df, block).copy()
     df["_row"], row_name = _label(df, row)
     df["_col"], col_name = _label(df, col)
-    facets = [None] if facet is None else sorted(df[facet].astype(str).unique())
+    facets = [None] if facet is None else sorted(_txt(df[facet]).unique())
     fig, axs = plt.subplots(1, len(facets), figsize=(max(5, 1.3 * df["_col"].nunique() + 2) * len(facets), 0.6 * df["_row"].nunique() + 2.5),
                             squeeze=False)
     lower = M.is_lower_better(value.replace("_mean", "")) if value.endswith("_mean") else False
     cmap = "viridis_r" if lower else "viridis"
     vmin, vmax = df[value].min(), df[value].max()
     for ax, f in zip(axs[0], facets):
-        sub = df if f is None else df[df[facet].astype(str) == f]
+        sub = df if f is None else df[_txt(df[facet]) == f]
         piv = sub.pivot_table(index="_row", columns="_col", values=value, aggfunc="mean")
         cnt = sub.pivot_table(index="_row", columns="_col", values=value, aggfunc="count")
         im = ax.imshow(piv.values, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
@@ -132,12 +159,13 @@ def param_effect(block, params=None, stage="triagem"):
         print(f"{block}: sem resultados.")
         return
     metric = f"{_metric()}_mean"
+    df = _stable(df, block)
     params = params or [a for a in _axes(block) if df[a].nunique() > 1]
     fig, axs = plt.subplots(1, len(params), figsize=(3.2 * len(params), 3.5), squeeze=False, sharey=True)
     summary = []
     for ax, p in zip(axs[0], params):
-        groups = sorted(df[p].astype(str).unique(), key=lambda s: (len(s), s))
-        data = [df.loc[df[p].astype(str) == g, metric].values for g in groups]
+        groups = sorted(_txt(df[p]).unique(), key=lambda s: (len(s), s))
+        data = [df.loc[_txt(df[p]) == g, metric].values for g in groups]
         ax.boxplot(data, showfliers=False)
         for i, d in enumerate(data, 1):
             ax.scatter(np.full(len(d), i) + np.random.uniform(-0.12, 0.12, len(d)), d, s=12, alpha=0.7)
@@ -158,6 +186,7 @@ def plot_grid_bars(block, stage="triagem"):
     if df.empty:
         return
     metric = _metric()
+    df = _stable(df, block)
     finalists = set(results.ranking(block, "final")["exp_name"]) if stage == "triagem" else set()
     fig, ax = plt.subplots(figsize=(8, 0.28 * len(df) + 1.5))
     y = np.arange(len(df))[::-1]
@@ -305,7 +334,7 @@ def final_report(blocks):
     metric = _metric()
     for block in blocks:
         spec = common.load_json(os.path.join(results.block_dir(block), "spec.json"), {})
-        if spec.get("papel") == "referencia":
+        if spec.get("papel") in ("referencia", "referencia_modelos"):
             exps = [(e, "referência") for e in results.configs(block)["exp_name"]]
         else:
             c = champion_name(block)
@@ -441,9 +470,10 @@ def plot_strategy(exps, split="test"):
 # --------------------------------------------------------------------------------------------------
 
 def _reference_block():
-    order = common.load_json(os.path.join(common.REPO_DIR, "grids", "_ordem.json"), {})
-    for b in order.get("blocos", []):
-        spec = common.load_json(os.path.join(common.REPO_DIR, "grids", b + ".json"), {})
+    """Bloco de referência (papel "referencia") do estudo ativo, procurado nos resultados dele."""
+    base = common.grids_dir()
+    for b in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        spec = common.load_json(os.path.join(base, b, "spec.json"), {})
         if spec.get("papel") == "referencia":
             return b, spec
     return None, {}
@@ -501,22 +531,28 @@ def axis_importance(block, metric=None, stage="triagem"):
     if df.empty or col not in df:
         print(f"{block}: sem resultados.")
         return None, None
-    df = df[np.isfinite(df[col])]
     spec = common.load_json(os.path.join(results.block_dir(block), "spec.json"), {})
-    axes = [a for a in spec.get("eixos", {}) if a in df and df[a].astype(str).nunique() > 1]
+    div_rate = {}
+    if "divergiu" in df:
+        for a in spec.get("eixos", {}):
+            if a in df:
+                div_rate.update({(a, str(k)): float(v) for k, v in df.groupby(_txt(df[a]))["divergiu"].mean().items()})
+    df = _stable(df, block)
+    df = df[np.isfinite(df[col])]
+    axes = [a for a in spec.get("eixos", {}) if a in df and _txt(df[a]).nunique() > 1]
     if not axes:
         print(f"{block}: nenhum eixo com mais de um valor.")
         return None, None
     base_row = df[df["e_base"].astype(bool)] if "e_base" in df else df.iloc[:0]
-    ref = {a: (str(base_row[a].iloc[0]) if len(base_row) else df[a].astype(str).mode()[0]) for a in axes}
+    ref = {a: (str(base_row[a].iloc[0]) if len(base_row) else _txt(df[a]).mode()[0]) for a in axes}
     y = df[col].to_numpy(float)
 
     def design(use):
         cols, names = [np.ones(len(df))], ["_intercepto"]
         for a in use:
-            for lvl in sorted(df[a].astype(str).unique()):
+            for lvl in sorted(_txt(df[a]).unique()):
                 if lvl != ref[a]:
-                    cols.append((df[a].astype(str) == lvl).to_numpy(float))
+                    cols.append((_txt(df[a]) == lvl).to_numpy(float))
                     names.append((a, lvl))
         return np.column_stack(cols), names
 
@@ -536,16 +572,17 @@ def axis_importance(block, metric=None, stage="triagem"):
     else:  # poucas configurações para o modelo aditivo: diferenças de médias marginais
         r2_full, coef, imp = float("nan"), {}, []
         for a in axes:
-            m = df.groupby(df[a].astype(str))[col].mean()
+            m = df.groupby(_txt(df[a]))[col].mean()
             coef.update({(a, lvl): m[lvl] - m[ref[a]] for lvl in m.index if lvl != ref[a]})
             imp.append({"eixo": a, "importancia (ΔR²)": float("nan")})
     rows = []
     for a in axes:
-        for lvl in sorted(df[a].astype(str).unique(), key=lambda s: (len(s), s)):
+        for lvl in sorted(_txt(df[a]).unique(), key=lambda s: (len(s), s)):
             d = 0.0 if lvl == ref[a] else coef.get((a, lvl), np.nan)
-            rows.append({"eixo": a, "valor": lvl, "n": int((df[a].astype(str) == lvl).sum()),
+            rows.append({"eixo": a, "valor": lvl, "n": int((_txt(df[a]) == lvl).sum()),
                          f"Δ {metric} vs base": d, "é o valor da base": lvl == ref[a],
-                         "veredito": "—" if lvl == ref[a] else _beyond_noise(d, sd, metric)})
+                         "veredito": "—" if lvl == ref[a] else _beyond_noise(d, sd, metric),
+                         "% divergiu": 100 * div_rate.get((a, lvl), 0.0)})
     effects = pd.DataFrame(rows)
     importance = pd.DataFrame(imp).sort_values("importancia (ΔR²)", ascending=False, na_position="last")
     model_txt = f"aditivo (R² = {r2_full:.2f})" if additive else "marginal (poucas configurações)"
@@ -654,8 +691,12 @@ def ablation_table(block, metric=None, extra_metric="val/pocid"):
             continue
         # Δ de "desfazer": piorar ao desfazer significa que a mudança ajuda
         helps = (d.mean() > 0) if lower else (d.mean() < 0)
-        verdict = "ruído (dispensável)" if sd is not None and abs(d.mean()) <= 2 * sd else (
-            "ajuda" if helps else "atrapalha")
+        s_abl = results.summarize(c["exp_name"])
+        if s_abl and s_abl.get("divergiu"):
+            verdict = f"sem ela diverge ({s_abl['folds_divergentes']}/{s_abl['n_folds']} folds)"
+        else:
+            verdict = "ruído (dispensável)" if sd is not None and abs(d.mean()) <= 2 * sd else (
+                "ajuda" if helps else "atrapalha")
         wins = int((d > 0).sum() if lower else (d < 0).sum())
         row = {"hiperparâmetro": c.get("desfeito"), "campeão": c.get("campeao"), "padrão": c.get("padrao"),
                f"Δ {metric} ao desfazer": d.mean(), "desvio": d.std(ddof=1) if len(d) > 1 else 0.0,
@@ -674,6 +715,7 @@ def ablation_table(block, metric=None, extra_metric="val/pocid"):
     print(f"Campeão re-treinado: {base}. Δ = (sem a mudança) − (campeão).")
     fig, ax = plt.subplots(figsize=(7, 0.4 * len(df) + 1.2))
     e = df.iloc[::-1]
+    e = e[~e["a mudança"].str.startswith("sem ela diverge")]  # Δ gigante: fica só na tabela
     colors = ["tab:green" if v == "ajuda" else "tab:red" if v == "atrapalha" else "tab:gray" for v in e["a mudança"]]
     ax.barh([f"{h}: {c} → {p}" for h, c, p in zip(e["hiperparâmetro"], e["campeão"], e["padrão"])],
             e[f"Δ {metric} ao desfazer"], xerr=e["desvio"], color=colors)
@@ -685,4 +727,186 @@ def ablation_table(block, metric=None, extra_metric="val/pocid"):
     ax.set_title(f"Ablação do campeão ({len(desc) and desc['exp_name'].iloc[0]})")
     _save(fig, f"ablacao_{block}")
     plt.show()
+    return df
+
+
+# --------------------------------------------------------------------------------------------------
+# Revisão (fase 2) e comparação entre fases
+# --------------------------------------------------------------------------------------------------
+
+KEY_PARAMS = ["target", "features", "lstm_activation", "optimizer", "lr", "num_layers", "hidden_size", "lookback"]
+
+
+def divergence_summary(blocks):
+    """Quantas configurações divergiram em cada bloco e quais hiperparâmetros elas têm em comum."""
+    rows, details = [], []
+    for b in blocks:
+        df = results.ranking(b, "triagem")
+        if df.empty:
+            df = results.ranking(b, "final")
+        if df.empty or "divergiu" not in df:
+            continue
+        rows.append({"bloco": b, "configurações": len(df), "divergiram": int(df["divergiu"].sum())})
+        for e in df.loc[df["divergiu"], "exp_name"]:
+            p = common.load_json(os.path.join(results.exp_dir(e), "parametros.json"), {}).get("params", {})
+            details.append({"bloco": b, **{k: str(p.get(k)) for k in KEY_PARAMS}})
+    per_block = pd.DataFrame(rows)
+    det = pd.DataFrame(details)
+    if not det.empty:
+        print(f"{len(det)} configurações divergentes. Combinações de hiperparâmetros mais comuns entre elas:")
+        pattern = det.groupby(["target", "lstm_activation", "optimizer", "lr"]).size().rename("n").reset_index()
+        return per_block, pattern.sort_values("n", ascending=False).reset_index(drop=True)
+    return per_block, det
+
+
+def selection_check(blocks):
+    """Com o critério de divergência: alguma configuração divergente chegou a uma final ou virou campeã?"""
+    rows = []
+    for b in blocks:
+        fin = results.ranking(b, "final")
+        champ = results.champion(b) or {}
+        if fin.empty:
+            continue
+        s = results.summarize(champ.get("exp_name")) if champ.get("exp_name") else None
+        rows.append({"bloco": b, "finalistas": len(fin), "finalistas divergentes": int(fin["divergiu"].sum()),
+                     "campeão": str(champ.get("exp_name", "—")).split("__", 1)[-1],
+                     "campeão divergiu": bool(s and s["divergiu"]),
+                     "campeão = melhor não divergente": champ.get("exp_name") == fin.loc[~fin["divergiu"], "exp_name"].head(1).squeeze()
+                     if (~fin["divergiu"]).any() else False})
+    return pd.DataFrame(rows)
+
+
+def compare_phases(metrics=("theil", "pocid", "da")):
+    """Referência (passeio aleatório e LSTM padrão) e campeão principal de cada fase com treino: validação × teste."""
+    active = os.environ.get("ESTUDO_CONFIG")
+    rows = []
+    try:
+        for ph in common.phases():
+            if not ph.get("blocos"):
+                continue
+            os.environ["ESTUDO_CONFIG"] = ph["estudo"]
+            ref, _ = _reference_block()
+            candidates = [("passeio aleatório", f"{ref}__passeio_aleatorio"), ("LSTM padrão", f"{ref}__lstm_padrao")]
+            champ = results.champion(ph.get("campeao_principal", "")) if ph.get("campeao_principal") else None
+            if champ:
+                candidates.append(("campeão da fase", champ["exp_name"]))
+            for role, exp in candidates:
+                s = results.summarize(exp, splits=("val", "test")) if ref or role == "campeão da fase" else None
+                if not s:
+                    continue
+                rows.append({"fase": ph["id"], "papel": role, "exp_name": exp.split("__", 1)[-1],
+                             **{f"{sp}/{m}": s.get(f"{sp}/{m}_mean") for m in metrics for sp in ("val", "test")}})
+    finally:
+        if active is None:
+            os.environ.pop("ESTUDO_CONFIG", None)
+        else:
+            os.environ["ESTUDO_CONFIG"] = active
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        _save_csv(df, "comparacao_fases")
+    return df
+
+
+# --------------------------------------------------------------------------------------------------
+# Fusão de modelos (inspirada na Combinatorial Fusion Analysis de Wu et al., IEEE CAI 2025), sem vazamento
+# --------------------------------------------------------------------------------------------------
+
+def _stacked_predictions(exp, split):
+    """Validação: cada dia previsto pelo modelo do fold que ainda não o viu (walk-forward, fora da amostra).
+    Teste: média dos modelos dos K folds. Índice (data, ticker)."""
+    frames = []
+    for f in results.fold_results(exp):
+        path = os.path.join(results.exp_dir(exp), "folds", f"fold_{f}", f"predicoes_{split}.csv")
+        if os.path.isfile(path):
+            frames.append(pd.read_csv(path, parse_dates=["data"]))
+    if not frames:
+        return None
+    df = pd.concat(frames).groupby(["data", "ticker"], as_index=True).agg(
+        previsto_lr=("previsto_lr", "mean"), real_lr=("real_lr", "first"), preco_t=("preco_t", "first"))
+    return df.sort_index()
+
+
+def _rsc(values):
+    """Função rank-score (RSC): escores normalizados em [0, 1] ordenados do maior para o menor."""
+    v = np.asarray(values, float)
+    span = v.max() - v.min()
+    return np.sort((v - v.min()) / span if span > 0 else np.zeros_like(v))[::-1]
+
+
+def _combine(preds, weights, kind):
+    """Combinação por escore (média ponderada das previsões) ou por rank (média ponderada das posições, mapeada de
+    volta para retorno pela média das curvas de valores ordenados dos modelos)."""
+    P = np.column_stack(preds)
+    w = np.asarray(weights, float) / np.sum(weights)
+    if kind == "escore":
+        return P @ w
+    ranks = np.column_stack([pd.Series(c).rank(method="average").to_numpy() - 1 for c in P.T])  # 0 = menor
+    avg_rank = ranks @ w
+    curve = np.mean([np.sort(c) for c in P.T], axis=0)  # valor típico de cada posição
+    return np.interp(avg_rank, np.arange(len(curve)), curve)
+
+
+def fusion_report(exps, max_size=5, metric=None):
+    """Combina as previsões de vários modelos em todas as combinações de 2 a `max_size` modelos, com três pesos
+    (média; desempenho = 1/MSE de validação; diversidade = força de diversidade cognitiva) e dois tipos (escore, rank).
+
+    Os pesos vêm só da validação walk-forward (fora da amostra de cada fold); a melhor fusão é escolhida pela
+    validação e só então o teste é mostrado. Diferente do paper, que escolhia a cada dia a combinação mais próxima do
+    preço real (vazamento), aqui a escolha é única e feita antes de olhar o teste.
+    """
+    import itertools
+
+    metric = metric or _metric()
+    val, test = {}, {}
+    for e in exps:
+        v, t = _stacked_predictions(e, "val"), _stacked_predictions(e, "test")
+        if v is not None and t is not None and not (results.summarize(e) or {}).get("divergiu", True):
+            val[e], test[e] = v, t
+    names = list(val)
+    if len(names) < 2:
+        print("Fusão: menos de 2 modelos com previsões válidas.")
+        return pd.DataFrame()
+    common_val = sorted(set.intersection(*[set(val[e].index) for e in names]))
+    common_test = sorted(set.intersection(*[set(test[e].index) for e in names]))
+    V = {e: val[e].loc[common_val] for e in names}
+    T = {e: test[e].loc[common_test] for e in names}
+    ref_v, ref_t = V[names[0]], T[names[0]]
+    rsc = {e: _rsc(V[e]["previsto_lr"]) for e in names}
+    cd = {(a, b): float(np.sqrt(np.mean((rsc[a] - rsc[b]) ** 2))) for a in names for b in names if a != b}
+    mse_v = {e: float(np.mean((V[e]["previsto_lr"] - V[e]["real_lr"]) ** 2)) for e in names}
+
+    def score(pred, ref, split):
+        tick = np.zeros(len(ref), int)
+        rows = np.arange(len(ref))  # dias consecutivos (uma série)
+        return M.compute(pred, ref["real_lr"].to_numpy(), tick, ["BTC"], split, ref["preco_t"].to_numpy(), rows)
+
+    rows = []
+    for e in names:  # modelos individuais
+        sv, st = score(V[e]["previsto_lr"].to_numpy(), ref_v, "val"), score(T[e]["previsto_lr"].to_numpy(), ref_t, "test")
+        rows.append({"modelos": _short(e), "n": 1, "combinação": "individual",
+                     **{f"val/{m}": sv[f"val/{m}"] for m in ("theil", "rmse", "pocid", "mape")},
+                     **{f"test/{m}": st[f"test/{m}"] for m in ("theil", "rmse", "pocid", "mape")}})
+    for k in range(2, min(max_size, len(names)) + 1):
+        for group in itertools.combinations(names, k):
+            ds = [np.mean([cd[(a, b)] for b in group if b != a]) for a in group]
+            weights = {"média": [1.0] * k, "desempenho": [1 / mse_v[a] for a in group], "diversidade": ds}
+            for wname, w in weights.items():
+                if np.sum(w) <= 0:
+                    continue
+                for kind in ("escore", "rank"):
+                    pv = _combine([V[a]["previsto_lr"].to_numpy() for a in group], w, kind)
+                    pt = _combine([T[a]["previsto_lr"].to_numpy() for a in group], w, kind)
+                    sv, st = score(pv, ref_v, "val"), score(pt, ref_t, "test")
+                    rows.append({"modelos": " + ".join(_short(a) for a in group), "n": k, "combinação": f"{kind} · {wname}",
+                                 **{f"val/{m}": sv[f"val/{m}"] for m in ("theil", "rmse", "pocid", "mape")},
+                                 **{f"test/{m}": st[f"test/{m}"] for m in ("theil", "rmse", "pocid", "mape")}})
+    df = pd.DataFrame(rows)
+    col = metric if metric in df else "val/theil"
+    df = df.sort_values(col, ascending=M.is_lower_better(col)).reset_index(drop=True)
+    _save_csv(df, "fusao_modelos")
+    best = df.iloc[0]
+    print(f"{len(names)} modelos, {len(df) - len(names)} fusões. Escolhida pela validação: {best['modelos']} "
+          f"({best['combinação']}): {col} {best[col]:.5f} → teste Theil {best['test/theil']:.4f}.")
+    print("Diversidade cognitiva média de cada modelo (validação):",
+          {_short(a): round(float(np.mean([cd[(a, b)] for b in names if b != a])), 4) for a in names})
     return df

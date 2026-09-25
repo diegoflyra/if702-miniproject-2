@@ -26,4 +26,7 @@ assert abs(inverse["t/pocid"] - manual) < 1e-12
 two = M.compute(true.tolist() * 2, true.tolist() * 2, np.repeat([0, 1], len(true)), ["X", "Y"], "t",
                 np.tile(price_t, 2), np.arange(2 * len(true)))
 assert two["t/pocid"] == 100 and two["t/ticker/Y/pocid"] == 100
+assert perfect["t/arv"] == 0 and perfect["t/smape"] == 0 and perfect["t/rmse_preco"] == 0 and perfect["t/mase"] == 0
+assert abs(rw["t/mase"] - 1) < 1e-12, "MASE do passeio aleatório deve ser 1"
+print(f"OK: ARV, SMAPE, MASE (passeio aleatório = 1), RMSE em US$.")
 print(f"OK: POCID (perfeita 100%, invertida {inverse['t/pocid']:.0f}%), Theil (passeio aleatório = 1), MAPE, DA.")

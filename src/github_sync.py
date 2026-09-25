@@ -1,6 +1,6 @@
 """Espelho opcional dos resultados no GitHub (o disco local continua sendo a cópia principal).
 
-Os arquivos de outputs/ vão para a pasta `{RUN_NAME}/outputs/` do branch `RESULTS_BRANCH` de `RESULTS_REPO_URL`
+Cada pasta de resultados (outputs/, outputs_btc_longo/, …) vai para `{RUN_NAME}/<nome da pasta>/` no branch `RESULTS_BRANCH` de `RESULTS_REPO_URL`
 (o branch é criado órfão se não existir, assim o histórico de código não se mistura com o de resultados).
 Pesos (.pth) só vão com --pesos; arquivos acima de 50 MB nunca vão (limite prático do GitHub).
 
@@ -8,7 +8,7 @@ Variáveis de ambiente: GITHUB_TOKEN (com permissão de escrita), RESULTS_REPO_U
 "resultados"), RUN_NAME. Sem token ou sem URL, não faz nada e avisa: o treino nunca depende disso.
 
 Uso:  python src/github_sync.py push --outputs /kaggle/working/outputs [--pesos] [-m "mensagem"]
-      python src/github_sync.py pull --dest /content/outputs          (retomar uma execução anterior)
+      python src/github_sync.py pull --dest /content                  (retomar: traz todas as pastas da execução)
 """
 import argparse
 import os
@@ -90,7 +90,8 @@ def push(outputs, weights=False, message=None):
         return False
     try:
         _ensure_clone(url, branch, token)
-        copied, skipped = _copy(outputs, os.path.join(CLONE, run, "outputs"), weights)
+        name = os.path.basename(os.path.normpath(outputs))
+        copied, skipped = _copy(outputs, os.path.join(CLONE, run, name), weights)
         _git("add", "-A")
         if _git("diff", "--cached", "--quiet", check=False).returncode == 0:
             print("GitHub: nada novo para enviar.")
@@ -101,7 +102,7 @@ def push(outputs, weights=False, message=None):
         for attempt in range(3):
             out = _git("push", "-q", "origin", f"HEAD:{branch}", check=False, token=token)
             if out.returncode == 0:
-                print(f"GitHub: {copied} arquivos enviados para {branch}/{run}/outputs ({skipped} ignorados: .pth/grandes).")
+                print(f"GitHub: {copied} arquivos enviados para {branch}/{run}/{name} ({skipped} ignorados: .pth/grandes).")
                 return True
             _git("pull", "-q", "--rebase", "origin", branch, check=False, token=token)
             time.sleep(2 * (attempt + 1))
@@ -121,12 +122,14 @@ def pull(dest):
     except Exception as e:  # noqa: BLE001
         print(f"GitHub: falha ao buscar resultados ({e}).")
         return False
-    src = os.path.join(CLONE, run, "outputs")
-    if not os.path.isdir(src):
-        print(f"GitHub: {branch}/{run}/outputs não existe; começando do zero.")
+    src = os.path.join(CLONE, run)
+    folders = [d for d in os.listdir(src) if os.path.isdir(os.path.join(src, d))] if os.path.isdir(src) else []
+    if not folders:
+        print(f"GitHub: {branch}/{run} não existe; começando do zero.")
         return False
-    shutil.copytree(src, dest, dirs_exist_ok=True)
-    print(f"GitHub: resultados de {branch}/{run} copiados para {dest}; o que já foi concluído será pulado.")
+    for d in folders:
+        shutil.copytree(os.path.join(src, d), os.path.join(dest, d), dirs_exist_ok=True)
+    print(f"GitHub: {folders} de {branch}/{run} copiados para {dest}; o que já foi concluído será pulado.")
     return True
 
 

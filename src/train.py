@@ -116,8 +116,34 @@ def make_scheduler(opt, p):
     raise ValueError(f"scheduler desconhecido: {kind}")
 
 
-def make_loss(name):
-    return {"mse": nn.MSELoss(), "mae": nn.L1Loss(), "huber": nn.SmoothL1Loss(beta=1.0)}[name]
+class LogCosh(nn.Module):
+    """log(cosh(erro)): quadrática perto de zero e linear nos extremos, suave em todo lugar."""
+
+    def forward(self, pred, y):
+        e = pred - y
+        return (e + nn.functional.softplus(-2 * e) - np.log(2.0)).mean()
+
+
+class Directional(nn.Module):
+    """MSE + λ·média(relu(−ŷ·y)): penaliza, além do erro, prever o sinal errado (proporcional à confiança errada)."""
+
+    def __init__(self, lam):
+        super().__init__()
+        self.lam = float(lam)
+
+    def forward(self, pred, y):
+        return nn.functional.mse_loss(pred, y) + self.lam * torch.relu(-pred * y).mean()
+
+
+def make_loss(name, p=None):
+    """Função de erro do treino: mse, mae, huber (δ = `huber_delta`), logcosh ou direcional (λ = `loss_lambda`)."""
+    p = p or {}
+    losses = {"mse": lambda: nn.MSELoss(), "mae": lambda: nn.L1Loss(),
+              "huber": lambda: nn.HuberLoss(delta=float(p.get("huber_delta", 1.0))),
+              "logcosh": lambda: LogCosh(), "direcional": lambda: Directional(p.get("loss_lambda", 0.5))}
+    if name not in losses:
+        raise ValueError(f"loss_fn desconhecida: {name} (opções: {list(losses)})")
+    return losses[name]()
 
 
 @torch.no_grad()
@@ -157,6 +183,27 @@ def naive_predict(p, fd, split):
     return out, rows, pred
 
 
+def _flat(fd, rows, batch=4096):
+    return np.concatenate([fd.windows(rows[i:i + batch]).reshape(len(rows[i:i + batch]), -1).cpu().numpy()
+                           for i in range(0, rows.numel(), batch)])
+
+
+def make_sklearn(p):
+    """Configurações fixas e razoáveis (o foco do estudo é o LSTM; estes são pontos de comparação)."""
+    seed = int(p.get("seed", 42))
+    if p["model"] == "svr":
+        from sklearn.svm import SVR
+        return SVR(C=1.0, epsilon=0.1, kernel="rbf", gamma="scale")
+    if p["model"] == "random_forest":
+        from sklearn.ensemble import RandomForestRegressor
+        return RandomForestRegressor(n_estimators=300, max_depth=8, min_samples_leaf=5, n_jobs=-1, random_state=seed)
+    if p["model"] == "xgboost":
+        from xgboost import XGBRegressor
+        return XGBRegressor(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
+                            random_state=seed, n_jobs=0)
+    raise ValueError(p["model"])
+
+
 def save_predictions(path, fd, rows, pred):
     pd.DataFrame({"data": pd.to_datetime(fd.dates[rows]), "ticker": np.array(fd.tickers)[fd.tick_id[rows]],
                   "preco_t": fd.price[rows], "previsto_lr": pred, "real_lr": fd.lr_h[rows]}).to_csv(path, index=False)
@@ -194,7 +241,25 @@ def run_fold(p, fold, out_dir, block, device, tracker):
     fd = data_mod.FoldData(p, fold, device=device)
     decision_metric = common.decision()[0]
 
-    if p["model"] in models.NAIVE_MODELS:
+    if p["model"] in models.SKLEARN_MODELS:
+        # referências do paper: mesma janela (achatada) e mesmo alvo normalizado, sem épocas
+        est = make_sklearn(p)
+        tr_rows = fd.idx["train"]
+        est.fit(_flat(fd, tr_rows), fd.y[tr_rows].cpu().numpy())
+        outs = {}
+        for split in ("train", "val", "test"):
+            rows = fd.idx[split]
+            rows_np = rows.cpu().numpy()
+            pred = fd.to_log_return(rows_np, est.predict(_flat(fd, rows)))
+            outs[split] = (M.compute(pred, fd.lr_h[rows_np], fd.tick_id[rows_np], fd.tickers, split, fd.price[rows_np], rows_np),
+                           rows_np, pred)
+        tr, (va, v_rows, v_pred), (te, t_rows, t_pred) = outs["train"][0], outs["val"], outs["test"]
+        row = add_gap({"fold": fold, "epoch": 0, **tr, **va})
+        append_history(hist_path, [row])
+        if tracker:
+            tracker.log(row)
+        best_epoch, epochs_run, best_row, train_final = 0, 0, row, tr
+    elif p["model"] in models.NAIVE_MODELS:
         tr, _, _ = naive_predict(p, fd, "train")
         va, v_rows, v_pred = naive_predict(p, fd, "val")
         te, t_rows, t_pred = naive_predict(p, fd, "test")
@@ -206,7 +271,7 @@ def run_fold(p, fold, out_dir, block, device, tracker):
         model = models.build_model(fd.n_features, p).to(device)
         opt = make_optimizer(model, p)
         sched = make_scheduler(opt, p)
-        loss_fn = make_loss(p["loss_fn"])
+        loss_fn = make_loss(p["loss_fn"], p)
         monitor = p["monitor"]
         best_val, best_epoch, best_row, bad = None, 0, None, 0
         ckpt = os.path.join(fold_dir, "modelo.pth")

@@ -49,6 +49,9 @@ def summarize(exp_name, folds=None, splits=("val", "gap")):
             vals = [res[f][source][k] for f in folds if k in res[f][source]]
             row[f"{k}_mean"] = float(np.mean(vals))
             row[f"{k}_std"] = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+    bad = [f for f in folds if common.fold_diverged(res[f]["val"])]
+    row["folds_divergentes"] = len(bad)
+    row["divergiu"] = bool(bad)
     row["melhor_epoca_media"] = float(np.mean([res[f]["melhor_epoca"] for f in folds]))
     row["epocas_treinadas_media"] = float(np.mean([res[f]["epocas_treinadas"] for f in folds]))
     row["tempo_s"] = float(sum(res[f]["tempo_s"] for f in folds))
@@ -62,7 +65,8 @@ def per_fold(exp_name, metric, split="val"):
 
 def configs(block):
     path = os.path.join(block_dir(block), "configs.csv")
-    return pd.read_csv(path) if os.path.isfile(path) else pd.DataFrame()
+    # rótulos como "None" (ex.: treino_inicio = todo o histórico) são texto, não valor ausente
+    return pd.read_csv(path, keep_default_na=False, na_values=[""]) if os.path.isfile(path) else pd.DataFrame()
 
 
 def ranking(block, stage="final", with_test=False):
@@ -70,6 +74,7 @@ def ranking(block, stage="final", with_test=False):
 
     stage="triagem": todas as configurações, média só nos folds de triagem.
     stage="final": só as que completaram TODOS os folds, média nos K folds.
+    Configurações com algum fold divergente (coluna `divergiu`) ficam no fim, qualquer que seja a média.
     """
     metric, mode, triage_folds, _ = common.decision()
     cfg = configs(block)
@@ -88,7 +93,8 @@ def ranking(block, stage="final", with_test=False):
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     col = f"{metric}_mean"
-    df = df.sort_values(col, ascending=(mode == "min"), na_position="last").reset_index(drop=True)
+    # configurações com fold divergente vão para o fim: nunca viram finalistas nem campeãs
+    df = df.sort_values(["divergiu", col], ascending=[True, mode == "min"], na_position="last").reset_index(drop=True)
     df.insert(0, "posicao", np.arange(1, len(df) + 1))
     return df
 

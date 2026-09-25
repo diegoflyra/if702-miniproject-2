@@ -1,0 +1,87 @@
+{
+  "bloco": "f5_b6_otimizacao",
+  "titulo": "Fase 5 · Bloco 6 — Otimização",
+  "pergunta": "Qual algoritmo, taxa de aprendizagem, agenda da taxa, momentum e batch?",
+  "descricao": "SGD, Adam, AdamW e RMSprop; taxa de aprendizagem de 0,0001 a 0,01; agenda da taxa (sem agenda, decaimento exponencial 0,99/0,97/0,95, redução no platô, cosseno); momentum; tamanho de batch. Espaço de 4 × 5 × 6 × 3 × 5 = 1.800 combinações, com busca aleatória de 60.",
+  "observar": "A faixa útil de lr de cada otimizador e se a agenda da taxa importa.",
+  "analise": [
+    "Otimizador e taxa:",
+    "Agenda da taxa de aprendizagem:",
+    "Momentum e batch:"
+  ],
+  "herda_de": [
+    "f5_b5_perda"
+  ],
+  "eixos": {
+    "optimizer": [
+      "sgd",
+      "adam",
+      "adamw",
+      "rmsprop"
+    ],
+    "lr": [
+      0.0001,
+      0.0003,
+      0.001,
+      0.003,
+      0.01
+    ],
+    "agenda": [
+      {
+        "_rotulo": "sem agenda",
+        "scheduler": "none"
+      },
+      {
+        "_rotulo": "exp 0,99",
+        "scheduler": "exponential",
+        "decay_rate": 0.99
+      },
+      {
+        "_rotulo": "exp 0,97",
+        "scheduler": "exponential",
+        "decay_rate": 0.97
+      },
+      {
+        "_rotulo": "exp 0,95",
+        "scheduler": "exponential",
+        "decay_rate": 0.95
+      },
+      {
+        "_rotulo": "platô",
+        "scheduler": "plateau"
+      },
+      {
+        "_rotulo": "cosseno",
+        "scheduler": "cosine"
+      }
+    ],
+    "momentum": [
+      0.0,
+      0.5,
+      0.9
+    ],
+    "batch_size": [
+      16,
+      32,
+      64,
+      128,
+      256
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 60,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "optimizer",
+      "col": "lr"
+    },
+    {
+      "row": "agenda",
+      "col": "lr"
+    }
+  ]
+}

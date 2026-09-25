@@ -1,0 +1,30 @@
+{
+  "bloco": "f3_transplante",
+  "titulo": "Fase 3 · Transplante do campeão da fase 1",
+  "pergunta": "Os hiperparâmetros ajustados na fase 1 continuam bons numa série maior, ou eram sobreajuste à série curta?",
+  "descricao": "O campeão principal da fase 1 é treinado sem mudanças na série longa, e também com a célula LSTM em tanh (a ativação ReLU na célula se mostrou instável na fase 1). A comparação pareada é contra o LSTM padrão da referência desta fase.",
+  "observar": "Se o campeão da fase 1 bate o LSTM padrão na série longa, ou se fica pior (sinal de que o ajuste fino era específico da série curta).",
+  "analise": [
+    "O campeão da fase 1 bateu o LSTM padrão na série longa?",
+    "Trocar a célula para tanh mudou algo?",
+    "O que isso diz sobre o ajuste fino da fase 1?"
+  ],
+  "herda_de": [],
+  "triagem": false,
+  "configs_de": [
+    {
+      "_nome": "campeao_fase1",
+      "estudo": "config/estudo.json",
+      "bloco": "lstm_b7_complementar_epocas"
+    },
+    {
+      "_nome": "campeao_fase1_tanh",
+      "estudo": "config/estudo.json",
+      "bloco": "lstm_b7_complementar_epocas",
+      "sobrescrever": {
+        "lstm_activation": "tanh"
+      }
+    }
+  ],
+  "comparar_com": "f3_referencia__lstm_padrao"
+}

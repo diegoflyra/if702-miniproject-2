@@ -1,0 +1,21 @@
+{
+  "bloco": "f5_checagem",
+  "titulo": "Fase 5 · Checagem de interação",
+  "pergunta": "Com a otimização nova, a arquitetura campeã continua a melhor?",
+  "descricao": "O 2º e o 3º colocados do bloco de arquitetura, treinados com a ativação, a perda e a otimização campeãs.",
+  "observar": "Se a ordem das arquiteturas se inverte.",
+  "analise": [
+    "A ordem das arquiteturas se manteve?"
+  ],
+  "herda_de": [
+    "f5_b6_otimizacao"
+  ],
+  "triagem": false,
+  "checagem": {
+    "bloco_origem": "f5_b3_arquitetura",
+    "posicoes": [
+      2,
+      3
+    ]
+  }
+}

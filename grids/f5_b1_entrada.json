@@ -1,0 +1,56 @@
+{
+  "bloco": "f5_b1_entrada",
+  "titulo": "Fase 5 · Bloco 1 — Entrada: janela, features e alvo",
+  "pergunta": "Quantos dias de histórico, quais informações e qual alvo?",
+  "descricao": "Todos os conjuntos de features do estudo: retornos, OHLCV, indicadores técnicos, EMA/MACD, calendário, derivativos (funding), on-chain, sentimento, mercado (ETH, ouro, S&P 500, VIX, juro, dólar, Nvidia, Tesla), a receita do paper e tudo junto. Espaço de 5 × 11 × 2 = 110 combinações, com busca aleatória de 50.",
+  "observar": "O efeito de cada conjunto de features controlando janela e alvo.",
+  "analise": [
+    "Janela:",
+    "Quais features trouxeram informação?",
+    "Alvo retorno × preço:"
+  ],
+  "herda_de": [],
+  "eixos": {
+    "lookback": [
+      10,
+      20,
+      40,
+      60,
+      120
+    ],
+    "features": [
+      "retornos",
+      "ohlcv",
+      "tecnicos",
+      "tecnicos_ema",
+      "calendario",
+      "derivativos",
+      "onchain",
+      "sentimento",
+      "mercado",
+      "paper",
+      "tudo"
+    ],
+    "target": [
+      "log_return",
+      "close"
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 50,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "features",
+      "col": "lookback"
+    },
+    {
+      "row": "features",
+      "col": "lookback",
+      "value": "val/pocid_mean"
+    }
+  ]
+}

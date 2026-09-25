@@ -31,7 +31,8 @@ OHLCV = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 # --------------------------------------------------------------------------------------------------
 
 def prices_dir():
-    return os.path.join(common.DATA_DIR, PRICES_SUBDIR)
+    """data/precos/<id do estudo>/: cada estudo tem a sua cópia normalizada (dois estudos podem ter a série "BTC")."""
+    return os.path.join(common.DATA_DIR, PRICES_SUBDIR, common.load_study().get("id", "padrao"))
 
 
 def _safe_name(ticker):
@@ -213,27 +214,116 @@ def _rsi(p, n=14):
     return 100 - 100 / (1 + up / down)
 
 
-def _feature_columns(df, price_col):
+def _zscore(x, n):
+    return (x - x.rolling(n).mean()) / x.rolling(n).std()
+
+
+def _macd_hist(p):
+    macd = (p.ewm(span=12, adjust=False).mean() - p.ewm(span=26, adjust=False).mean()) / p
+    return macd - macd.ewm(span=9, adjust=False).mean()
+
+
+def _external(source, index, max_gap):
+    """Série externa alinhada ao calendário da série de preço (só dias ≤ t; lacunas curtas preenchidas para frente)."""
+    import external
+
+    return external.load(source).reindex(index).ffill(limit=max_gap)
+
+
+def _price_features(df, price_col):
     p = df[price_col]
     lr = np.log(p).diff()
     logv = np.log1p(df["Volume"])
     return {
-        "price": p,
-        "log_price": np.log(p),
-        "log_return": lr,
-        "hl_range": np.log(df["High"] / df["Low"]),
-        "oc_range": np.log(df["Close"] / df["Open"]),
-        "volume_change": logv.diff(),
-        "volume_z20": (logv - logv.rolling(20).mean()) / logv.rolling(20).std(),
-        "volatility_20": lr.rolling(20).std(),
-        "ma_ratio_10": p / p.rolling(10).mean() - 1,
-        "ma_ratio_50": p / p.rolling(50).mean() - 1,
-        "rsi_14": _rsi(p) / 100 - 0.5,
+        "price": lambda: p,
+        "log_price": lambda: np.log(p),
+        "log_return": lambda: lr,
+        "hl_range": lambda: np.log(df["High"] / df["Low"]),
+        "oc_range": lambda: np.log(df["Close"] / df["Open"]),
+        "volume_change": lambda: logv.diff(),
+        "volume_z20": lambda: _zscore(logv, 20),
+        "volatility_20": lambda: lr.rolling(20).std(),
+        "ma_ratio_10": lambda: p / p.rolling(10).mean() - 1,
+        "ma_ratio_50": lambda: p / p.rolling(50).mean() - 1,
+        "rsi_14": lambda: _rsi(p) / 100 - 0.5,
+        # EMA e MACD (usados no paper de Wu et al., 2025), relativos ao preço para ficarem estacionários
+        "ema_ratio_12": lambda: p / p.ewm(span=12, adjust=False).mean() - 1,
+        "ema_ratio_26": lambda: p / p.ewm(span=26, adjust=False).mean() - 1,
+        "macd": lambda: (p.ewm(span=12, adjust=False).mean() - p.ewm(span=26, adjust=False).mean()) / p,
+        "macd_hist": lambda: _macd_hist(p),
     }
 
 
+def _context_features(df):
+    """Calendário e séries externas. Antes do início do histórico de uma fonte, o valor é 0 e a feature
+    `<fonte>_disp` vale 0 (1 quando o dado existe), para o modelo distinguir "neutro" de "sem dado"."""
+    idx = df.index
+    cache = {}
+
+    def ext(source, max_gap):
+        if source not in cache:
+            cache[source] = _external(source, idx, max_gap)
+        return cache[source]
+
+    funding = lambda: ext("funding", 7)["funding_rate"]  # noqa: E731
+    onchain = lambda c: ext("onchain", 3)[c]  # noqa: E731
+    fg = lambda: ext("fear_greed", 3)["fear_greed"]  # noqa: E731
+    mk = lambda c: ext("mercado", 4)[c]  # noqa: E731  (fim de semana e feriado: último fechamento conhecido)
+    mret = lambda c: np.log(mk(c)).diff().fillna(0.0)  # noqa: E731
+    dow = pd.Series(idx.dayofweek, index=idx, dtype=float)
+    return {
+        # calendário (o BTC negocia 7 dias por semana; fim de semana tem menos liquidez)
+        "dow_sin": lambda: np.sin(2 * np.pi * dow / 7),
+        "dow_cos": lambda: np.cos(2 * np.pi * dow / 7),
+        # derivativos: taxa de financiamento do perpétuo (BitMEX), nível e extremos (z-score de 30 dias)
+        "funding_rate": lambda: funding().fillna(0.0),
+        "funding_z30": lambda: _zscore(funding(), 30).fillna(0.0),
+        "funding_disp": lambda: funding().notna().astype(float),
+        # on-chain (blockchain.com): atividade real da rede
+        "tx_count_change": lambda: np.log(onchain("tx_count")).diff().fillna(0.0),
+        "active_addr_change": lambda: np.log(onchain("active_addresses")).diff().fillna(0.0),
+        "tx_volume_z30": lambda: _zscore(np.log(onchain("tx_volume_usd")), 30).fillna(0.0),
+        "hashrate_change_7": lambda: np.log(onchain("hash_rate") / onchain("hash_rate").shift(7)).fillna(0.0),
+        # sentimento: índice de medo e ganância (alternative.me), 0–100 → ±0,5
+        "fear_greed": lambda: (fg() / 100 - 0.5).fillna(0.0),
+        "fear_greed_change": lambda: fg().diff().div(100).fillna(0.0),
+        "fear_greed_disp": lambda: fg().notna().astype(float),
+        # mercado (Yahoo Finance): retornos diários dos ativos do paper; VIX e juro também em nível
+        "eth_return": lambda: mret("eth"),
+        "eth_disp": lambda: mk("eth").notna().astype(float),
+        "ouro_return": lambda: mret("ouro"),
+        "sp500_return": lambda: mret("sp500"),
+        "nvidia_return": lambda: mret("nvidia"),
+        "tesla_return": lambda: mret("tesla"),
+        "dolar_return": lambda: mret("dolar"),
+        "vix_nivel": lambda: np.log(mk("vix")).fillna(np.log(20.0)),
+        "vix_change": lambda: mret("vix"),
+        "juro10a_nivel": lambda: mk("juro10a").ffill().fillna(2.0) / 10,
+        "juro10a_change": lambda: mk("juro10a").diff().fillna(0.0),
+    }
+
+
+def _feature_columns(df, price_col, names):
+    funcs = {**_price_features(df, price_col), **_context_features(df)}
+    return {n: funcs[n]() for n in names}
+
+
 FEATURES = ["price", "log_price", "log_return", "hl_range", "oc_range", "volume_change", "volume_z20",
-            "volatility_20", "ma_ratio_10", "ma_ratio_50", "rsi_14"]
+            "volatility_20", "ma_ratio_10", "ma_ratio_50", "rsi_14",
+            "dow_sin", "dow_cos", "funding_rate", "funding_z30", "funding_disp",
+            "tx_count_change", "active_addr_change", "tx_volume_z30", "hashrate_change_7",
+            "fear_greed", "fear_greed_change", "fear_greed_disp",
+            "ema_ratio_12", "ema_ratio_26", "macd", "macd_hist",
+            "eth_return", "eth_disp", "ouro_return", "sp500_return", "nvidia_return", "tesla_return", "dolar_return",
+            "vix_nivel", "vix_change", "juro10a_nivel", "juro10a_change"]
+
+_CAL = ["dow_sin", "dow_cos"]
+_DER = ["funding_rate", "funding_z30", "funding_disp"]
+_ONC = ["tx_count_change", "active_addr_change", "tx_volume_z30", "hashrate_change_7"]
+_SEN = ["fear_greed", "fear_greed_change", "fear_greed_disp"]
+_EMA = ["ema_ratio_12", "ema_ratio_26", "macd", "macd_hist"]
+_MER = ["eth_return", "eth_disp", "ouro_return", "sp500_return", "nvidia_return", "tesla_return", "dolar_return",
+        "vix_nivel", "vix_change", "juro10a_nivel", "juro10a_change"]
 
 FEATURE_SETS = {
     "preco": ["price"],
@@ -242,6 +332,18 @@ FEATURE_SETS = {
     "ohlcv": ["log_return", "hl_range", "oc_range", "volume_change"],
     "tecnicos": ["log_return", "hl_range", "oc_range", "volume_change", "volatility_20",
                  "ma_ratio_10", "ma_ratio_50", "rsi_14"],
+    # contexto externo ao preço (sempre junto com o retorno)
+    "calendario": ["log_return"] + _CAL,
+    "derivativos": ["log_return"] + _DER,
+    "onchain": ["log_return"] + _ONC,
+    "sentimento": ["log_return"] + _SEN,
+    "externos": ["log_return"] + _CAL + _DER + _ONC + _SEN,
+    "tecnicos_ema": ["log_return"] + _EMA,
+    "mercado": ["log_return"] + _MER,
+    # receita do paper (Wu et al., 2025): mercado + hash rate + EMA/MACD
+    "paper": ["log_return"] + _MER + ["hashrate_change_7"] + _EMA,
+    "tudo": ["log_return", "hl_range", "oc_range", "volume_change", "volatility_20", "rsi_14"] + _EMA + _CAL + _DER + _ONC
+            + _SEN + _MER,
 }
 
 TARGETS = ["log_return", "close"]
@@ -265,7 +367,7 @@ def build_frame(ticker, features, target, horizon):
     """
     price_col = common.load_study()["dados"]["coluna_preco"]
     df = load_prices(ticker)
-    cols = _feature_columns(df, price_col)
+    cols = _feature_columns(df, price_col, features)
     out = pd.DataFrame({name: cols[name] for name in features}, index=df.index)
     out = out.replace([np.inf, -np.inf], np.nan).ffill()
     p = df[price_col]
@@ -386,7 +488,9 @@ class FoldData:
         folds, test_start = fold_boundaries()
         t0, v0, v1 = folds[fold]
 
-        feats, ys, lr_h, price, tick_id, dates = [], [], [], [], [], []
+        alvo_vol = bool(params.get("alvo_vol")) and target == "log_return"
+        inicio = params.get("treino_inicio")
+        feats, ys, lr_h, price, tick_id, dates, vols = [], [], [], [], [], [], []
         idx = {"train": [], "val": [], "test": []}
         y_a, y_b = [], []
         offset = 0
@@ -400,6 +504,8 @@ class FoldData:
             ok = has_window & ~pd.isna(tgt_date) & ~np.isnan(df["_y"].to_numpy())
             dd = d.to_numpy()
             train = ok & (dd >= np.datetime64(t0)) & (tgt_date < np.datetime64(v0))
+            if inicio:  # descarta o começo do histórico no treino (ex.: só pós-COVID, como no paper)
+                train &= dd >= np.datetime64(pd.Timestamp(inicio))
             val = ok & (dd >= np.datetime64(v0)) & (tgt_date < np.datetime64(v1))
             test = ok & (dd >= np.datetime64(test_start))
             if train.sum() == 0:
@@ -408,6 +514,11 @@ class FoldData:
             x = df[features].to_numpy(np.float64)
             fscaler = _Scaler(params["scaler"]).fit(x[pos[train].min(): pos[train].max() + 1])
             y = df["_y"].to_numpy(np.float64)
+            # volatilidade conhecida em t (desvio dos últimos 20 retornos diários, até t inclusive)
+            # (nos primeiros dias, sem histórico suficiente, usa 2%/dia: nunca preenche com valores futuros)
+            vol = np.log(df["_price"]).diff().rolling(20, min_periods=5).std().fillna(0.02).clip(lower=1e-4).to_numpy()
+            if alvo_vol:  # alvo = retorno ÷ volatilidade recente; a previsão é multiplicada de volta
+                y = y / vol
             tscaler = _Scaler("standard" if params["scaler"] == "none" else params["scaler"])
             tscaler.fit(y[train][:, None])
 
@@ -419,12 +530,15 @@ class FoldData:
             price.append(df["_price"].to_numpy(np.float64))
             tick_id.append(np.full(n, tid))
             dates.append(dd)
+            vols.append(vol if alvo_vol else np.ones(n))
             for name, mask in (("train", train), ("val", val), ("test", test)):
                 idx[name].append(pos[mask] + offset)
             offset += n
 
         cat = np.concatenate
         self.tickers, self.features, self.lookback, self.target = tickers, features, L, target
+        self.norm_janela = bool(params.get("norm_janela"))
+        self.vol = cat(vols)
         self.n_features = len(features)
         self.device = device
         self.feats = torch.tensor(cat(feats), dtype=torch.float32, device=device)
@@ -436,8 +550,11 @@ class FoldData:
         self._offsets = torch.arange(-L + 1, 1, device=device)
 
     def windows(self, rows):
-        """rows[B] (linhas de fim de janela) → X[B, L, F]."""
-        return self.feats[rows[:, None] + self._offsets]
+        """rows[B] (linhas de fim de janela) → X[B, L, F]; com norm_janela, cada janela vira z-score dela mesma."""
+        x = self.feats[rows[:, None] + self._offsets]
+        if self.norm_janela:
+            x = (x - x.mean(1, keepdim=True)) / (x.std(1, keepdim=True) + 1e-6)
+        return x
 
     def size(self, split):
         return int(self.idx[split].numel())
@@ -447,7 +564,7 @@ class FoldData:
         rows = np.asarray(rows)
         y = np.asarray(y_scaled, dtype=np.float64) * self.y_b[rows] + self.y_a[rows]
         if self.target == "log_return":
-            return y
+            return y * self.vol[rows]
         return np.log(np.clip(y, 1e-8, None) / self.price[rows])
 
     def train_mean_log_return(self):

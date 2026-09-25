@@ -4,6 +4,8 @@ __pycache__/
 .ipynb_checkpoints/
 outputs/
 outputs.zip
+outputs_*/
+outputs_*.zip
 wandb/
 *.tmp
 # data/precos/ é gerado a partir do CSV de origem a cada execução (o MD5 da origem vai no manifesto)

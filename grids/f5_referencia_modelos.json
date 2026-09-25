@@ -1,0 +1,67 @@
+{
+  "bloco": "f5_referencia_modelos",
+  "papel": "referencia_modelos",
+  "titulo": "Fase 5 · Outras famílias de modelos (referências do paper)",
+  "pergunta": "Com as mesmas janelas, como o LSTM se compara a SVM, Random Forest, XGBoost, CNN e regressão linear?",
+  "descricao": "Os cinco modelos base do paper de Wu et al. (IEEE CAI 2025), treinados nas mesmas janelas e com o mesmo alvo do LSTM padrão: SVR (kernel RBF), Random Forest (300 árvores), XGBoost (300 árvores), CNN 1D (duas convoluções) e regressão linear. Também o LSTM do paper (camadas de 100 e 50 unidades, dropout de 20%, normalização min-max, features de mercado + hash rate + EMA/MACD, treino a partir de 2020-03), com alvo em retorno e em preço, como eles fazem.",
+  "observar": "Se alguma outra família bate o LSTM padrão, e o que acontece com a receita do paper fora do período em que foi publicada.",
+  "analise": [
+    "Alguma família de modelos bateu o LSTM padrão?",
+    "A receita do paper funciona na nossa série e no nosso protocolo?",
+    "O alvo em preço (como no paper) se comporta como na fase 1?"
+  ],
+  "herda_de": [],
+  "triagem": false,
+  "configs": [
+    {
+      "_nome": "svr",
+      "model": "svr"
+    },
+    {
+      "_nome": "random_forest",
+      "model": "random_forest"
+    },
+    {
+      "_nome": "xgboost",
+      "model": "xgboost"
+    },
+    {
+      "_nome": "cnn1d",
+      "model": "cnn1d",
+      "conv_filters": 32
+    },
+    {
+      "_nome": "regressao_linear",
+      "model": "linear"
+    },
+    {
+      "_nome": "lstm_padrao",
+      "model": "lstm"
+    },
+    {
+      "_nome": "lstm_paper",
+      "model": "lstm",
+      "hidden_sizes": [
+        100,
+        50
+      ],
+      "dropout": 0.2,
+      "scaler": "minmax",
+      "features": "paper",
+      "treino_inicio": "2020-03-11"
+    },
+    {
+      "_nome": "lstm_paper_preco",
+      "model": "lstm",
+      "hidden_sizes": [
+        100,
+        50
+      ],
+      "dropout": 0.2,
+      "scaler": "minmax",
+      "features": "paper",
+      "treino_inicio": "2020-03-11",
+      "target": "close"
+    }
+  ]
+}

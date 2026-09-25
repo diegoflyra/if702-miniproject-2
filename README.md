@@ -14,7 +14,8 @@ Repositório: https://github.com/diegoflyra/if702-miniproject-2 (código na raiz
 |---|---|---|
 | 0 — Referência | passeio aleatório, média, último retorno, regressão linear, LSTM padrão (5 seeds, para medir o ruído) | 9 configs |
 | 1 — Entrada | janela, features, alvo | grid 48 |
-| 2 — Capacidade | camadas ocultas e nós (1), unidades densas (2) | aleatória 50 de 147 |
+| 1b — Contexto externo | calendário, derivativos (funding), on-chain, sentimento (medo e ganância), todos | grid 6 |
+| 2 — Capacidade | camadas ocultas e nós (1), unidades densas (2), resumo da sequência (último estado, média, atenção) | aleatória 60 de 441 |
 | 3 — Ativação e inicialização | ativação da célula LSTM e das densas (6), inicialização dos pesos (4) | aleatória 40 de 96 |
 | 4 — Otimização | otimizador, taxa de aprendizagem (7), decaimento da lr (5), momentum, batch | aleatória 60 de 2.100 |
 | Checagem | 2º e 3º do Bloco 2 com a otimização campeã | 2 configs |
@@ -31,7 +32,43 @@ de aprendizagem; o decaimento dos pesos é o `weight_decay` (L2), testado junto 
 
 **Métricas** (validação e teste, gerais e por série): `mse`, `rmse`, `mae` (log-retorno), `mape` (% no preço), `theil`
 (erro ÷ erro do passeio aleatório), **`pocid`** (% de acerto na direção: D_t = 1 se (P_t − P_t−1)(P̂_t − P̂_t−1) > 0),
-`da`, `skill`, `r2`, `ic`. A métrica de decisão fica em `config/estudo.json → decisao.metrica`.
+`da`, `skill`, `r2`, `ic`; no preço: `arv`, `smape`, `mase` e `rmse_preco` (US$). A métrica de decisão fica em `config/estudo.json → decisao.metrica`.
+
+## O notebook em fases
+
+`Kaggle_LSTM.ipynb` conta o estudo na ordem das descobertas; cada fase é uma tentativa de melhorar o modelo
+(roteiro e textos em `grids/_fases.json`):
+
+1. **Fase 1 — Hiperparâmetros da lista** (série 2017–2023, `config/estudo.json`, resultados em `outputs/`): blocos B0–B10.
+   Ganhos na validação que não se sustentam no teste.
+2. **Fase 2 — Revisão das divergências** (sem treino): quantas configurações divergiram e se isso mudou alguma escolha
+   (não mudou).
+3. **Fase 3 — Mais dados** (BTC-USD 2014–2026, `config/estudo_btc_longo.json`, `outputs_btc_longo/`): referência com
+   5 seeds e transplante do campeão da fase 1. O LSTM padrão passa a bater o passeio aleatório; o campeão da fase 1 não.
+4. **Fase 4 — Contexto externo e atenção** (série longa): funding, on-chain, sentimento, calendário e atenção.
+5. **Fase 5 — O espaço de busca completo** (série longa): outras famílias de modelos (SVR, Random Forest, XGBoost,
+   CNN 1D, receita do paper de Wu et al., 2025) → entrada (todas as features, incluindo mercado: ETH, ouro, S&P 500,
+   VIX, juro, dólar, Nvidia, Tesla) → normalização (scaler, alvo pela volatilidade, por janela, início do treino) →
+   arquitetura (LSTM/GRU, bidirecional, pilhas decrescentes, atenção, LayerNorm, residual, CNN-LSTM) → ativações e
+   inicialização → função de erro (MSE, MAE, Huber, log-cosh, direcional) → otimização (com agendas da taxa) →
+   checagem → regularização (dropout, entre camadas, na entrada, recorrente; weight decay; corte de gradiente) →
+   épocas → augmentation → ablação → fusão de modelos (média, desempenho, diversidade cognitiva; escore e rank).
+
+`FASES` na célula de configuração escolhe quais fases treinam; as outras só são lidas, então dá para reaproveitar uma
+fase já rodada (ex.: a fase 1 do Kaggle) colocando a pasta de resultados dela no lugar ou usando `RESUME_FROM`.
+
+## Dados
+
+- Série curta: `data-bitcoin_timedata-2023_v2 - ….csv` (raiz). Série longa: `data/btc-usd_yahoo_2014-09-17_2026-09-23.csv`.
+- `data/externos/`: funding (BitMEX, desde 2016-05), on-chain (blockchain.com, desde 2009) e medo e ganância
+  (alternative.me, desde 2018-02), congelados. Para atualizar: `python src/external.py --baixar`.
+
+**Features** (`src/data.py`, todas calculadas só com informação até o dia t):
+retorno, amplitude máxima/mínima, corpo do candle, variação e z-score do volume, volatilidade de 20 dias, distância das
+médias de 10 e 50 dias, RSI de 14 dias; seno/cosseno do dia da semana; funding (nível, z-score de 30 dias, disponível);
+on-chain (variação de transações e de endereços ativos, z-score do volume transacionado, variação de 7 dias do hash
+rate); medo e ganância (nível, variação, disponível). Antes do início de uma fonte, o valor é 0 e `*_disp` vale 0.
+Open interest e long/short ratio não entram (APIs gratuitas só têm 30 dias); netflows e baleias só existem pagos.
 
 ## Tokens
 
@@ -42,9 +79,10 @@ Secrets* com os mesmos nomes. Sem token, tudo roda e fica só em disco.
 
 ```
 config/estudo.json        séries, datas, partições walk-forward, métrica de decisão e valores padrão de TODOS os hiperparâmetros
-grids/_ordem.json         ordem dos blocos, campeão principal e bônus
+grids/_fases.json         roteiro do notebook: fases, estudo de cada uma, blocos, motivação e descobertas
 grids/lstm_b*.json        um arquivo por bloco: eixos, tipo de busca, herança, textos do notebook
 src/data.py               preços (cache → Kaggle Input → yfinance), features, folds por data, janelas sem vazamento
+src/external.py           séries externas congeladas em data/externos/: funding (BitMEX), on-chain (blockchain.com), medo e ganância
 src/models.py             LSTM configurável (ativação da célula, inicialização, densas), GRU, regressão linear e referências ingênuas
 src/metrics.py            mse, rmse, mae, mape, theil, POCID, acurácia direcional, skill, r2, IC — gerais e por série
 src/augment.py            data augmentation de séries (só no treino): jitter, scaling, magwarp, timewarp, permutation, slicing
@@ -62,7 +100,7 @@ tools/build_notebook.py   gera Kaggle_LSTM.ipynb a partir de config/ e grids/
 
 1. Séries e datas: `config/estudo.json → dados` (`fonte`: `csv`, `yfinance` ou `synthetic` para testar sem internet).
 2. Hiperparâmetros padrão (a base do Bloco 1): `config/estudo.json → padrao`.
-3. Blocos: edite/crie `grids/*.json` e a ordem em `grids/_ordem.json`.
+3. Blocos: edite/crie `grids/*.json` e a ordem das fases em `grids/_fases.json`.
 4. `python tools/build_notebook.py` → o notebook sai consistente com os grids (tabelas, contagens, heatmaps, análises).
 5. `python tests/check_grids.py` → confere quantas configurações cada bloco vai treinar.
 
@@ -88,7 +126,7 @@ Configurações equivalentes (ex.: `rnn_dropout` com 1 camada, `momentum` com Ad
 ```bash
 pip install -r requirements.txt
 python src/data.py --preparar                                   # congela a série em data/precos/ (com MD5)
-python tests/check_data.py && python tests/check_models.py && python tests/check_metrics.py && python tests/check_augment.py && python tests/check_grids.py
+python tests/check_data.py && python tests/check_models.py && python tests/check_metrics.py && python tests/check_augment.py && python tests/check_features.py && python tests/check_grids.py
 python src/grid_search.py grids/lstm_b0_referencia.json         # um bloco
 ```
 

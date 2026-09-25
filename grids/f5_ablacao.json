@@ -1,0 +1,27 @@
+{
+  "bloco": "f5_ablacao",
+  "papel": "ablacao",
+  "titulo": "Fase 5 · Ablação do campeão",
+  "pergunta": "Das mudanças que levaram do LSTM padrão ao campeão, quais realmente melhoram o modelo e quais são dispensáveis?",
+  "descricao": "Cada configuração parte do campeão principal e **desfaz uma única mudança**, voltando aquele hiperparâmetro ao valor do padrão do estudo. Todas rodam os K folds e são comparadas fold a fold com o campeão re-treinado aqui. Se piora ao desfazer (além do ruído entre seeds), a mudança ajuda; se fica dentro do ruído, é dispensável; se melhora ao desfazer, a mudança atrapalhava e só entrou por sorte na seleção. Hiperparâmetros cuja reversão não muda nada (ex.: momentum com Adam) são descartados como equivalentes. É a resposta mais direta para \"o que melhora o modelo quando mexemos\".",
+  "observar": "Quais mudanças ficam verdes (ajudam além do ruído) e se as mais importantes batem com a importância dos eixos em cada bloco.",
+  "analise": [
+    "Quais mudanças realmente ajudam (além do ruído)?",
+    "Quais são dispensáveis e poderiam voltar ao padrão?",
+    "Alguma mudança atrapalhava?",
+    "Isso confirma a importância dos eixos vista em cada bloco?"
+  ],
+  "herda_de": [
+    "f5_b8_epocas"
+  ],
+  "triagem": false,
+  "incluir_base": true,
+  "ablacao": {
+    "ignorar": [
+      "seed",
+      "augment",
+      "aug_strength",
+      "aug_prob"
+    ]
+  }
+}

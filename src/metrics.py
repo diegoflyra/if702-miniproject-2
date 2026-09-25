@@ -14,11 +14,15 @@ Acerto (maior é melhor):
   só nos dias em que a previsão aposta numa direção (NaN para o passeio aleatório);
 - skill: 1 − MSE/MSE_passeio_aleatório no retorno (> 0 = bate o passeio aleatório; ≈ 1 − theil);
 - r2: 1 − SSE/SST no retorno; ic: correlação de Pearson entre retorno previsto e real.
+No preço (menor é melhor):
+- arv: Average Relative Variance, Σ(P − P̂)² / Σ(P̂ − média(P))² (como em Ferreira et al., junto com POCID e Theil);
+- smape: erro percentual absoluto simétrico (%); mase: MAE ÷ MAE do passeio aleatório (< 1 = bate a referência);
+- rmse_preco: RMSE em US$ (comparável à literatura, mas depende da escala do período).
 """
 import numpy as np
 
-METRICS = ["mse", "rmse", "mae", "mape", "theil", "pocid", "da", "skill", "r2", "ic"]
-LOWER_IS_BETTER = {"loss", "mse", "rmse", "mae", "mape", "theil"}
+METRICS = ["mse", "rmse", "mae", "mape", "theil", "pocid", "da", "skill", "r2", "ic", "arv", "smape", "mase", "rmse_preco"]
+LOWER_IS_BETTER = {"loss", "mse", "rmse", "mae", "mape", "theil", "arv", "smape", "mase", "rmse_preco"}
 
 
 def _core(pred, true, price, consecutive):
@@ -42,6 +46,13 @@ def _core(pred, true, price, consecutive):
         "skill": 1 - mse / mse_rw if mse_rw > 0 else 0.0,
         "r2": 1 - float(np.sum(err ** 2)) / sst if sst > 0 else 0.0,
         "ic": ic,
+        # no preço (US$), como na literatura de previsão de séries financeiras
+        "arv": float(np.sum((p_true - p_pred) ** 2) / np.sum((p_pred - p_true.mean()) ** 2))
+        if np.sum((p_pred - p_true.mean()) ** 2) > 0 else float("nan"),
+        "smape": float(100 * np.mean(2 * np.abs(p_true - p_pred) / (np.abs(p_true) + np.abs(p_pred)))),
+        "mase": float(np.mean(np.abs(p_true - p_pred)) / np.mean(np.abs(p_true - price)))
+        if np.mean(np.abs(p_true - price)) > 0 else float("nan"),
+        "rmse_preco": float(np.sqrt(np.mean((p_true - p_pred) ** 2))),
     }
 
 

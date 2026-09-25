@@ -1,0 +1,27 @@
+{
+  "bloco": "f4_atencao",
+  "titulo": "Fase 4 · Atenção após a LSTM",
+  "pergunta": "Uma camada de atenção, que aprende a focar em dias específicos da janela, supera o último estado da LSTM?",
+  "descricao": "Sobre o campeão do bloco de contexto, varia só o resumo da sequência: `last` (estado do último dia, o padrão), `mean` (média dos estados no tempo) e `attention` (média ponderada com pesos aprendidos, que permite focar, por exemplo, num pico de volume há 5 dias).",
+  "observar": "O ganho pareado da atenção sobre o último estado, comparado com o ruído entre seeds.",
+  "analise": [
+    "A atenção melhorou a validação além do ruído?",
+    "E o teste?"
+  ],
+  "herda_de": [
+    "f4_contexto"
+  ],
+  "triagem": false,
+  "eixos": {
+    "pooling": [
+      "last",
+      "mean",
+      "attention"
+    ]
+  },
+  "busca": {
+    "tipo": "grid"
+  },
+  "incluir_base": true,
+  "pareado": true
+}

@@ -1,0 +1,123 @@
+{
+  "_comentario": "Roteiro do notebook: cada fase é uma tentativa de melhorar o modelo, na ordem das descobertas. `estudo` define dados e partições; `blocos` rodam em sequência; `motivacao` e `descoberta` são os textos da fase. Os números de `descoberta` são das execuções de referência (fase 1: Kaggle, 2× T4, commit 4f90109; fases 3 e 4: GPU local, execução completa do notebook reaproveitando a fase 1), e o notebook recalcula tudo ao rodar.",
+  "fases": [
+    {
+      "id": "fase1",
+      "titulo": "Fase 1 — Ajustar os hiperparâmetros da lista (BTC 2017–2023)",
+      "estudo": "config/estudo.json",
+      "motivacao": "A pergunta inicial: quais hiperparâmetros do LSTM (camadas e nós, unidades densas, dropout, inicialização, decaimento, ativações, taxa de aprendizagem) realmente melhoram a previsão do Bitcoin? Blocos sequenciais, cada um herdando o campeão do anterior, com ruído entre seeds como régua, checagem de interação, bônus (GRU, data augmentation) e ablação do campeão.",
+      "blocos": [
+        "lstm_b0_referencia",
+        "lstm_b1_entrada",
+        "lstm_b2_capacidade",
+        "lstm_b3_ativacao_init",
+        "lstm_b4_otimizacao",
+        "lstm_b4_checagem",
+        "lstm_b5_regularizacao",
+        "lstm_b6_complementar_capacidade",
+        "lstm_b7_complementar_epocas",
+        "lstm_b8_bonus_celula",
+        "lstm_b9_bonus_augmentation",
+        "lstm_b10_ablacao"
+      ],
+      "campeao_principal": "lstm_b7_complementar_epocas",
+      "bonus": [
+        "lstm_b8_bonus_celula",
+        "lstm_b9_bonus_augmentation"
+      ],
+      "ablacao": "lstm_b10_ablacao",
+      "descoberta": [
+        "Na validação, a cadeia de blocos levou o Theil de 0,989 (LSTM padrão) para 0,979: ~2% melhor que o passeio aleatório. Os ganhos vieram da janela de 20 dias e da ativação ReLU na célula; capacidade, regularização, épocas e GRU não mudaram nada além do ruído.",
+        "No teste (2022-08 → 2023-08), nenhum LSTM bateu o passeio aleatório: o campeão ficou com Theil 1,019, pior até que o LSTM padrão (1,003). Acerto de direção ~50%. Os ganhos da validação eram, em boa parte, o efeito de escolher o melhor entre ~300 configurações, e o teste caiu num regime bem mais calmo.",
+        "Só retornos como entrada foi melhor que volume, OHLCV ou indicadores técnicos; o alvo em preço quebrou (extrapolação na alta de 2021). Data augmentation piorou 13 das 14 variações."
+      ]
+    },
+    {
+      "id": "fase2",
+      "titulo": "Fase 2 — Revisão: configurações divergentes distorciam a análise?",
+      "estudo": "config/estudo.json",
+      "tipo": "revisao",
+      "revisa": "fase1",
+      "motivacao": "48 das 309 configurações da fase 1 tiveram fold divergente: todas as de alvo em preço (folds de 2021) e as que combinavam ReLU na célula com RMSprop e lr alta (redes maiores, a checagem de interação inteira, parte da ablação). A seleção de campeões e as médias dos gráficos ainda as consideravam. Correção: um fold diverge se val/theil > 10 ou se a métrica não é finita; configurações divergentes não chegam a finais nem viram campeãs, e ficam fora das médias.",
+      "blocos": [],
+      "descoberta": [
+        "Nenhuma decisão da fase 1 mudou: os 12 campeões são os mesmos, nenhuma configuração divergente chegou a uma final e a herança entre blocos é a mesma (divergências já ficavam no fim do ranking pelos erros enormes).",
+        "Mudaram só as médias dos gráficos de efeito, que misturavam configurações explodidas. A conclusão da fase 1 se mantém."
+      ]
+    },
+    {
+      "id": "fase3",
+      "titulo": "Fase 3 — Mais dados: série BTC-USD de 2014 a 2026",
+      "estudo": "config/estudo_btc_longo.json",
+      "motivacao": "A série da fase 1 tem só 6 anos e o teste caiu num período atípico. Com o dobro de história (BTC-USD do Yahoo, 2014-09 → 2026-09), cada fold treina em mais regimes de mercado e o teste passa a ser o último ano (2025-09 → 2026-09). Duas perguntas: o LSTM padrão passa a bater o passeio aleatório? O campeão da fase 1 continua bom aqui?",
+      "blocos": [
+        "f3_referencia",
+        "f3_transplante"
+      ],
+      "campeao_principal": "f3_referencia",
+      "descoberta": [
+        "Com mais dados, o LSTM padrão bateu o passeio aleatório no teste nas 5 seeds (Theil 0,983–0,995; seed 42: 0,988), ~1% melhor e acima do ruído. O ganho está no tamanho do movimento, não na direção: o acerto de subida/queda segue em ~50%.",
+        "O campeão da fase 1 transplantado ficou pior que o LSTM padrão na validação (Theil 0,998 contra 0,990) e não bateu o passeio aleatório no teste (1,002; 1,009 com a célula em tanh): o ajuste fino da fase 1 era específico da série curta."
+      ],
+      "ressalva": "A escolha de uma série mais longa foi motivada pelo teste da fase 1. Para não reaproveitar aquele teste, esta fase usa outro período de teste (2025-09 → 2026-09)."
+    },
+    {
+      "id": "fase4",
+      "titulo": "Fase 4 — Informação de fora do preço e atenção",
+      "estudo": "config/estudo_btc_longo.json",
+      "motivacao": "Se o retorno passado sozinho carrega pouca informação, talvez o que falte sejam dados de fora da série: derivativos (funding rate), fundamentos de rede (on-chain), sentimento (medo e ganância) e calendário (fim de semana). Também uma camada de atenção, que deixa a rede focar em dias específicos da janela. Parte do LSTM padrão, o melhor da fase 3.",
+      "blocos": [
+        "f4_contexto",
+        "f4_atencao"
+      ],
+      "campeao_principal": "f4_atencao",
+      "descoberta": [
+        "Nenhuma fonte de contexto melhorou a validação: calendário, derivativos (funding) e sentimento empataram com só retornos dentro do ruído; on-chain e todas juntas pioraram além do ruído (Theil 0,997 e 0,996 contra 0,990). No teste, todas ficaram piores que só retornos (0,993 a 1,057 contra 0,988): mais informação levou a mais sobreajuste.",
+        "A atenção piorou: Theil de validação 1,002 contra 0,990 do último estado, pior em 5 de 5 folds (a média no tempo também piorou, 1,000). O campeão da fase continua sendo o LSTM padrão da fase 3."
+      ],
+      "ressalva": "Esta fase usa o mesmo teste da fase 3; o teste já foi visto uma vez, então uma melhora aqui precisaria ser grande para ser convincente."
+    },
+    {
+      "id": "fase5",
+      "titulo": "Fase 5 — O espaço de busca completo (série longa)",
+      "estudo": "config/estudo_btc_longo.json",
+      "motivacao": "As fases anteriores exploraram um eixo de cada vez. Esta fase refaz a busca em blocos na série longa com tudo o que foi proposto ao longo do estudo e mais os eixos clássicos que tinham ficado de fora: outras famílias de modelos como referência (SVM, Random Forest, XGBoost, CNN, as referências do paper de Wu et al., 2025); todas as features (incluindo as de mercado do paper); normalizações (scaler, alvo pela volatilidade, por janela) e período de treino; arquitetura (LSTM/GRU, bidirecional, pilhas decrescentes, atenção, LayerNorm, residual, CNN-LSTM); ativações e inicialização; funções de erro (MSE, MAE, Huber, log-cosh, direcional); otimização com agendas da taxa; todas as formas de dropout, incluindo o recorrente; épocas; data augmentation; ablação; e fusão de modelos inspirada na Combinatorial Fusion Analysis do paper, sem o vazamento dele (pesos e escolha só pela validação).",
+      "blocos": [
+        "f5_referencia_modelos",
+        "f5_b1_entrada",
+        "f5_b2_normalizacao",
+        "f5_b3_arquitetura",
+        "f5_b4_ativacao_init",
+        "f5_b5_perda",
+        "f5_b6_otimizacao",
+        "f5_checagem",
+        "f5_b7_regularizacao",
+        "f5_b8_epocas",
+        "f5_bonus_augmentation",
+        "f5_ablacao"
+      ],
+      "campeao_principal": "f5_b8_epocas",
+      "bonus": [
+        "f5_bonus_augmentation"
+      ],
+      "ablacao": "f5_ablacao",
+      "fusao": {
+        "referencias": "f5_referencia_modelos",
+        "campeoes": [
+          "f5_b8_epocas",
+          "f5_bonus_augmentation"
+        ],
+        "max_modelos": 5
+      },
+      "descoberta": [
+        "Ainda não executada: esta fase é a próxima a rodar (os números aparecem nas células de análise).",
+        "No teste funcional (2 folds, 3 épocas), todos os componentes novos treinaram; a receita do paper com alvo em preço extrapolou (Theil 498), como o alvo em preço na fase 1."
+      ],
+      "ressalva": "Mesmo teste das fases 3 e 4, já visto: uma melhora aqui precisa ser clara (além do ruído e consistente entre folds) para ser convincente."
+    }
+  ],
+  "proximos_passos": [
+    "Mudar o alvo: prever a volatilidade futura (sabidamente mais previsível que o retorno) ou a direção (classificação sobe/lateral/desce). Pede métricas próprias, porque Theil e POCID foram feitos para retorno.",
+    "Dados sintéticos com TimeGAN, treinado dentro de cada fold só com dados de treino. Expectativa baixa: o gerador aprende com os mesmos dados, e o augmentation piorou 13 de 14 variações na fase 1; o que ajudou foi dado real a mais."
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "bloco": "f5_b7_regularizacao",
+  "titulo": "Fase 5 · Bloco 7 — Regularização: todos os dropouts",
+  "pergunta": "Quanto e onde aplicar dropout, e quanta penalização e corte de gradiente?",
+  "descricao": "Todas as formas de dropout em LSTM: depois da recorrência e entre as densas (`dropout`), entre camadas empilhadas (`rnn_dropout`), na entrada (`input_dropout`) e **recorrente** (`recurrent_dropout`: no estado oculto entre um passo de tempo e o seguinte, com a mesma máscara em toda a sequência, como no Keras). Mais o decaimento dos pesos (L2) e o corte da norma do gradiente. Espaço de 5 × 3 × 3 × 4 × 4 × 3 = 2.160 combinações, com busca aleatória de 60; mais épocas e paciência.",
+  "observar": "O gap treino–validação, e se o dropout recorrente (o que faltava) ajuda.",
+  "analise": [
+    "Qual dropout ajudou (se algum)?",
+    "Dropout recorrente:",
+    "Weight decay e corte de gradiente:",
+    "Gap e subajuste:"
+  ],
+  "herda_de": [
+    "f5_b6_otimizacao",
+    "f5_checagem"
+  ],
+  "fixos": {
+    "epochs": 200,
+    "patience": 20
+  },
+  "eixos": {
+    "dropout": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.5
+    ],
+    "rnn_dropout": [
+      0.0,
+      0.2,
+      0.4
+    ],
+    "input_dropout": [
+      0.0,
+      0.1,
+      0.2
+    ],
+    "recurrent_dropout": [
+      0.0,
+      0.1,
+      0.2,
+      0.3
+    ],
+    "weight_decay": [
+      0.0,
+      1e-05,
+      0.0001,
+      0.001
+    ],
+    "grad_clip": [
+      0.5,
+      1.0,
+      5.0
+    ]
+  },
+  "busca": {
+    "tipo": "aleatoria",
+    "n": 60,
+    "seed": 0
+  },
+  "incluir_base": true,
+  "heatmaps": [
+    {
+      "row": "dropout",
+      "col": "recurrent_dropout"
+    },
+    {
+      "row": "dropout",
+      "col": "recurrent_dropout",
+      "value": "gap/rmse_mean"
+    }
+  ]
+}
