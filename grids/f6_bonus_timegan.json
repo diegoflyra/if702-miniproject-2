@@ -62,5 +62,6 @@
     "tipo": "grid"
   },
   "incluir_base": true,
-  "pareado": true
+  "pareado": true,
+  "preferir_rapido": true
 }

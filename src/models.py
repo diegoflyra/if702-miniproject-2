@@ -36,6 +36,39 @@ ACTIVATIONS = {"relu": nn.ReLU, "tanh": nn.Tanh, "sigmoid": nn.Sigmoid, "elu": n
 WEIGHT_INITS = ["padrao", "uniforme", "normal", "xavier", "glorot_ortogonal", "he"]
 
 
+_ACT_CODE = {"tanh": 0, "sigmoid": 1, "softsign": 2, "relu": 3}
+
+
+@torch.jit.script
+def _act(x: torch.Tensor, code: int) -> torch.Tensor:
+    if code == 0:
+        return torch.tanh(x)
+    if code == 1:
+        return torch.sigmoid(x)
+    if code == 2:
+        return x / (1 + torch.abs(x))
+    return torch.relu(x)
+
+
+@torch.jit.script
+def _lstm_loop(xproj: torch.Tensor, w_hh: torch.Tensor, mask: torch.Tensor, code: int) -> torch.Tensor:
+    """Recorrência de uma camada, compilada com TorchScript (~1,5× mais rápida que o laço em Python, mesma conta):
+    c = σ(f)·c + σ(i)·act(g); h = σ(o)·act(c); `mask` é o dropout recorrente (1 = sem dropout)."""
+    B = xproj.shape[0]
+    L = xproj.shape[1]
+    H = xproj.shape[2] // 4
+    h = xproj.new_zeros(B, H)
+    c = xproj.new_zeros(B, H)
+    outs = []
+    for t in range(L):
+        gates = xproj[:, t] + (h * mask) @ w_hh.t()
+        i, f, g, o = gates.chunk(4, 1)
+        c = torch.sigmoid(f) * c + torch.sigmoid(i) * _act(g, code)
+        h = torch.sigmoid(o) * _act(c, code)
+        outs.append(h)
+    return torch.stack(outs, 1)
+
+
 class CustomLSTM(nn.Module):
     """LSTM empilhada com ativação configurável na célula: c = f·c + i·act(g); h = o·act(c).
 
@@ -48,6 +81,7 @@ class CustomLSTM(nn.Module):
         self.hidden_size, self.num_layers = hidden_size, num_layers
         self.recurrent_dropout = float(recurrent_dropout)
         self.act = ACTIVATIONS[activation]()
+        self.act_code = _ACT_CODE[activation]
         self.drop = nn.Dropout(dropout)
         for layer in range(num_layers):
             n_in = input_size if layer == 0 else hidden_size
@@ -66,20 +100,12 @@ class CustomLSTM(nn.Module):
                 seq = self.drop(seq)
             w_ih, w_hh = getattr(self, f"weight_ih_l{layer}"), getattr(self, f"weight_hh_l{layer}")
             xproj = seq @ w_ih.T + getattr(self, f"bias_ih_l{layer}") + getattr(self, f"bias_hh_l{layer}")
-            h = x.new_zeros(B, H)
-            c = x.new_zeros(B, H)
-            mask = None
             if self.training and self.recurrent_dropout > 0:  # mesma máscara em todos os passos (dropout variacional)
                 keep = 1 - self.recurrent_dropout
                 mask = torch.bernoulli(x.new_full((B, H), keep)) / keep
-            outs = []
-            for t in range(L):
-                gates = xproj[:, t] + (h if mask is None else h * mask) @ w_hh.T
-                i, f, g, o = gates.chunk(4, dim=1)
-                c = torch.sigmoid(f) * c + torch.sigmoid(i) * self.act(g)
-                h = torch.sigmoid(o) * self.act(c)
-                outs.append(h)
-            seq = torch.stack(outs, dim=1)
+            else:
+                mask = x.new_ones(B, H)
+            seq = _lstm_loop(xproj, w_hh, mask, self.act_code)
         return seq, None
 
 
@@ -129,6 +155,13 @@ class RecurrentRegressor(nn.Module):
         else:
             raise ValueError(f"pooling desconhecido: {self.pooling}")
         return self.head(self.norm(z)).squeeze(-1)
+
+
+def needs_custom_cell(p):
+    """True se a configuração precisa da célula LSTM própria (ativação ≠ tanh ou dropout recorrente), ~10× mais lenta
+    que o LSTM do cuDNN."""
+    return p.get("model", "lstm") == "lstm" and p.get("cell", "lstm") == "lstm" and (
+        p.get("lstm_activation", "tanh") != "tanh" or float(p.get("recurrent_dropout", 0.0) or 0) > 0)
 
 
 def uses_stack(p):

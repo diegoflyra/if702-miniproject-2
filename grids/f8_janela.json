@@ -33,5 +33,6 @@
   "busca": {
     "tipo": "grid"
   },
-  "incluir_base": false
+  "incluir_base": false,
+  "preferir_rapido": true
 }

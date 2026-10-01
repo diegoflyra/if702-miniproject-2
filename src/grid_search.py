@@ -73,6 +73,48 @@ def load_spec(path):
     return spec
 
 
+def prefer_fast(champ, block, study_config=None):
+    """Regra da célula lenta: se o campeão de `block` precisa da célula LSTM própria, compara (pareado, por fold, na
+    validação) com a melhor configuração do mesmo bloco que roda no cuDNN. Se o ganho da lenta não passa de 2× o ruído
+    entre seeds, devolve a rápida. Devolve (params, exp_name, motivo)."""
+    if not models.needs_custom_cell(champ["params"]):
+        return champ["params"], champ["exp_name"], None
+    active = os.environ.get("ESTUDO_CONFIG")
+    if study_config:
+        os.environ["ESTUDO_CONFIG"] = study_config
+    try:
+        import report_utils as rep
+
+        rows = []
+        for stage in ("final", "triagem"):
+            r = results.ranking(block, stage)
+            if not r.empty:
+                rows = [e for e in r.loc[~r["divergiu"], "exp_name"]
+                        if not models.needs_custom_cell(common.load_json(
+                            os.path.join(results.block_dir(block), "params", e + ".json"), {}))]
+                if rows:
+                    break
+        if not rows:
+            return champ["params"], champ["exp_name"], "nenhuma alternativa rápida no bloco; mantida a lenta"
+        fast = rows[0]
+        sd = rep.noise_floor("val/theil", verbose=False)
+        a, b = results.per_fold(champ["exp_name"], "val/theil"), results.per_fold(fast, "val/theil")
+        folds = a.index.intersection(b.index)
+        delta = float((b[folds] - a[folds]).mean()) if len(folds) else float("nan")  # > 0: a lenta é melhor
+        if sd is not None and np.isfinite(delta) and delta > 2 * sd:
+            return champ["params"], champ["exp_name"], (f"mantida a célula lenta: {champ['exp_name']} é melhor que "
+                                                         f"{fast} em {delta:+.4f} de Theil (> 2× ruído {2 * sd:.4f})")
+        params = common.load_json(os.path.join(results.block_dir(block), "params", fast + ".json"))
+        return params, fast, (f"célula rápida no lugar de {champ['exp_name']}: Δ Theil {delta:+.4f} em {len(folds)} folds, "
+                              f"dentro de 2× o ruído entre seeds ({2 * sd if sd else float('nan'):.4f})")
+    finally:
+        if study_config:
+            if active is None:
+                os.environ.pop("ESTUDO_CONFIG", None)
+            else:
+                os.environ["ESTUDO_CONFIG"] = active
+
+
 def resolve_base(spec, dry=False):
     """Base do bloco: o melhor campeão entre `herda_de` (ou o padrão do estudo)."""
     base = common.default_params()
@@ -89,9 +131,14 @@ def resolve_base(spec, dry=False):
         if found:
             best = sorted(found, key=lambda c: (bool(c.get("divergiu")),
                                                 c["metricas"][f"{metric}_mean"] * (1 if mode == "min" else -1)))[0]
-            base.update(best["params"])
-            origem = f"campeão de {best['bloco']} ({best['exp_name']})"
-            spec["_origem_exp"] = best["exp_name"]
+            params, exp, motivo = best["params"], best["exp_name"], None
+            if spec.get("preferir_rapido"):
+                params, exp, motivo = prefer_fast(best, best["bloco"])
+            base.update(params)
+            origem = f"campeão de {best['bloco']} ({exp})" + (f" — {motivo}" if motivo else "")
+            spec["_origem_exp"] = exp
+            if motivo:
+                print(f"Regra da célula lenta: {motivo}")
     if spec.get("base_de"):
         # base = campeão de um bloco de OUTRO estudo (ex.: o melhor LSTM da série longa levado para várias moedas)
         src = spec["base_de"]
@@ -103,9 +150,19 @@ def resolve_base(spec, dry=False):
             print(f"[dry] sem campeão de {src['bloco']} ({src['estudo']}); usando o padrão do estudo como base provisória")
         else:
             keep = {k: base[k] for k in src.get("manter", [])}  # parâmetros próprios deste estudo (ex.: ativos)
-            base.update(champ["params"])
+            params, exp, motivo = champ["params"], champ["exp_name"], None
+            if spec.get("preferir_rapido"):
+                active_out = os.environ.pop("EXP_OUTPUT_DIR", None)
+                try:
+                    params, exp, motivo = prefer_fast(champ, src["bloco"], src["estudo"])
+                finally:
+                    if active_out:
+                        os.environ["EXP_OUTPUT_DIR"] = active_out
+            base.update(params)
             base.update(keep)
-            origem = f"campeão de {src['bloco']} ({src['estudo']}: {champ['exp_name']})"
+            origem = f"campeão de {src['bloco']} ({src['estudo']}: {exp})" + (f" — {motivo}" if motivo else "")
+            if motivo:
+                print(f"Regra da célula lenta: {motivo}")
     return base, origem
 
 
@@ -338,8 +395,42 @@ def _gpus():
         return []
 
 
+STOP_FLAG = "_PARADO_POR_TEMPO"
+
+
+def stop_flag_path():
+    return os.path.join(os.environ.get("EXP_OUTPUT_ROOT", common.REPO_DIR), STOP_FLAG)
+
+
+def deadline_passed():
+    """True se o prazo da sessão (PRAZO_SESSAO, epoch em segundos, definido pelo notebook) já passou."""
+    prazo = os.environ.get("PRAZO_SESSAO")
+    return bool(prazo) and time.time() > float(prazo)
+
+
+def backup_zip():
+    """Copia de segurança da pasta de resultados do estudo ativo: <pasta>.zip ao lado dela (sem .pth). É o que
+    sobrevive se a sessão do Kaggle for cortada no meio de um bloco."""
+    import zipfile
+
+    out = common.output_dir()
+    base = os.path.dirname(out)
+    zpath = out + ".zip"
+    with zipfile.ZipFile(zpath + ".tmp", "w", zipfile.ZIP_DEFLATED) as z:
+        for root, _, files in os.walk(out):
+            for name in files:
+                if not name.endswith((".pth", ".tmp")):
+                    full = os.path.join(root, name)
+                    z.write(full, os.path.relpath(full, base))
+    os.replace(zpath + ".tmp", zpath)
+    print(f"[backup] {os.path.basename(zpath)} atualizado ({os.path.getsize(zpath) / 1e6:.1f} MB)", flush=True)
+
+
 def run_jobs(jobs, block, workers_per_gpu, cpu_workers):
-    """jobs: [(exp_name, params_path, folds)]. Pula o que já está concluído em disco."""
+    """jobs: [(exp_name, params_path, folds)]. Pula o que já está concluído em disco.
+
+    Com PRAZO_SESSAO definido, não lança jobs novos depois do prazo (os que já rodam terminam) e marca a parada;
+    com BACKUP_MIN, atualiza o .zip de resultados a cada BACKUP_MIN minutos durante o bloco."""
     logs = os.path.join(results.block_dir(block), "logs")
     os.makedirs(logs, exist_ok=True)
     pending = []
@@ -358,7 +449,14 @@ def run_jobs(jobs, block, workers_per_gpu, cpu_workers):
     total, finished, t0 = len(pending), 0, time.time()
     print(f"{total} jobs, {len(slots)} em paralelo ({'GPUs ' + ','.join(map(str, gpus)) if gpus else 'CPU'})", flush=True)
     queue = list(pending)
+    backup_every = float(os.environ.get("BACKUP_MIN", "0") or 0) * 60
+    last_backup = time.time()
     while queue or running:
+        if queue and deadline_passed():
+            print(f"PRAZO DA SESSÃO ATINGIDO: {len(queue)} jobs não iniciados; os {len(running)} em andamento vão "
+                  "terminar. Rode de novo com RESUME_FROM para continuar daqui.", flush=True)
+            queue.clear()
+            open(stop_flag_path(), "w").close()
         while queue and free:
             exp, ppath, folds = queue.pop(0)
             slot = free.pop(0)
@@ -381,6 +479,12 @@ def run_jobs(jobs, block, workers_per_gpu, cpu_workers):
                 failed.append(exp)
             elapsed = (time.time() - t0) / 60
             print(f"[{finished}/{total}] {status} {exp} ({(time.time() - start) / 60:.1f} min; total {elapsed:.1f} min)", flush=True)
+        if backup_every and time.time() - last_backup > backup_every:
+            try:
+                backup_zip()
+            except Exception as e:  # noqa: BLE001 — backup nunca derruba o treino
+                print(f"[backup] falhou: {e}", flush=True)
+            last_backup = time.time()
     for exp in failed:
         path = os.path.join(logs, f"{exp}.log")
         tail = open(path, encoding="utf-8").read().splitlines()[-15:]
@@ -433,10 +537,18 @@ def run_block(spec_path, workers_per_gpu=1, cpu_workers=1, dry=False, max_config
     if dry:
         return pd.DataFrame(rows)
 
+    if deadline_passed() or os.path.isfile(stop_flag_path()):
+        open(stop_flag_path(), "w").close()
+        print(f"{block}: prazo da sessão atingido; bloco não iniciado (rode de novo com RESUME_FROM para continuar).")
+        return pd.DataFrame()
     ppath = lambda c: os.path.join(bdir, "params", c["exp_name"] + ".json")  # noqa: E731
     first = triage_folds if use_triage else all_folds
     failed = run_jobs([(c["exp_name"], ppath(c), first) for c in kept], block, workers_per_gpu, cpu_workers)
 
+    if os.path.isfile(stop_flag_path()):
+        backup_zip()
+        print(f"{block}: interrompido pelo prazo da sessão; campeão não definido. O que terminou está salvo.")
+        return pd.DataFrame()
     if use_triage:
         tri = results.ranking(block, "triagem")
         tri.to_csv(os.path.join(bdir, "ranking_triagem.csv"), index=False)
@@ -450,6 +562,10 @@ def run_block(spec_path, workers_per_gpu=1, cpu_workers=1, dry=False, max_config
         failed += run_jobs([(e, os.path.join(bdir, "params", e + ".json"), all_folds) for e in finalists],
                            block, workers_per_gpu, cpu_workers)
 
+    if os.path.isfile(stop_flag_path()):
+        backup_zip()
+        print(f"{block}: interrompido pelo prazo da sessão durante a confirmação; campeão não definido.")
+        return pd.DataFrame()
     final = results.ranking(block, "final")
     final.to_csv(os.path.join(bdir, "ranking_final.csv"), index=False)
     if final.empty:

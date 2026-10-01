@@ -162,7 +162,10 @@ WANDB_ENTITY = os.environ.get("WANDB_ENTITY", "")
 USAR_WANDB = True                # False = não envia nada ao W&B, mesmo com a chave
 USAR_GITHUB = True               # False = não espelha os resultados no GitHub, mesmo com o token
 MODO_TESTE = False               # True = passada rápida (3 configs por bloco, 2 épocas) em pastas *_teste, para validar o
-                                 # notebook inteiro em minutos antes da execução completa''')
+                                 # notebook inteiro em minutos antes da execução completa
+HORAS_LIMITE = 10.5              # depois disso não começa treinos novos e encerra limpo (o Kaggle corta em 12 h);
+                                 # para continuar, rode de novo com RESUME_FROM apontando para o Output desta versão
+BACKUP_MIN = 30                  # atualiza os .zip de resultados a cada N minutos durante os blocos''')
     clone = code('''import os
 import shutil
 import subprocess
@@ -310,6 +313,25 @@ def usar_estudo(config):
     print(f"Estudo ativo: {est.get('titulo')} ({config}) → {OUTPUTS} | W&B: {os.environ['WANDB_PROJECT']}")
 
 
+os.environ["PRAZO_SESSAO"] = str(time.time() + HORAS_LIMITE * 3600)
+os.environ["BACKUP_MIN"] = str(BACKUP_MIN)
+_PARADA = os.path.join(WORKDIR, "_PARADO_POR_TEMPO")
+if os.path.isfile(_PARADA):
+    os.remove(_PARADA)
+print(f"Prazo: novos treinos até {time.strftime('%H:%M', time.localtime(time.time() + HORAS_LIMITE * 3600))} "
+      f"({HORAS_LIMITE} h); backup a cada {BACKUP_MIN} min.")
+
+
+def continuar():
+    """False depois que o prazo da sessão foi atingido: as células seguintes se pulam e o notebook termina limpo."""
+    if os.path.isfile(_PARADA) or time.time() > float(os.environ["PRAZO_SESSAO"]):
+        open(_PARADA, "w").close()
+        print("Prazo da sessão atingido: célula pulada. Para continuar, rode de novo com RESUME_FROM apontando para o "
+              "Output desta versão (o que terminou não é treinado de novo).")
+        return False
+    return True
+
+
 def executar(fase):
     """True se a fase está em FASES; senão as células de treino dela são puladas (e as análises leem o que houver)."""
     if fase not in FASES:
@@ -376,13 +398,36 @@ Na execução de referência:
 **📝 Nesta execução:** _…_ (confira nas tabelas acima se os números se repetem)""")
 
 
+def guard(cell):
+    """Envolve a célula em `if continuar():` (pula tudo depois do prazo da sessão); a última expressão vira display()."""
+    import ast
+
+    if cell["cell_type"] != "code":
+        return cell
+    src = "".join(cell["source"])
+    if src.startswith(("backup(", "if continuar()")):
+        return cell
+    lines = src.split("\n")
+    try:  # última instrução é uma expressão solta (ex.: `final`, `rep.grid_ranking(...)`) → display explícito
+        py = "\n".join(("pass" if l.lstrip().startswith(("!", "%")) else l) for l in lines)
+        last = ast.parse(py).body[-1]
+        if isinstance(last, ast.Expr) and last.lineno == last.end_lineno and not lines[last.lineno - 1].lstrip().startswith(("!", "%")):
+            ln, a, b = last.lineno - 1, last.col_offset, last.end_col_offset
+            expr = lines[ln][a:b]
+            if not expr.startswith(("print(", "display(", "backup(")):
+                lines[ln] = lines[ln][:a] + f"display({expr})" + lines[ln][b:]  # comentário no fim fica fora
+    except SyntaxError:
+        pass
+    return code("if continuar():\n" + "\n".join("    " + l if l.strip() else l for l in lines))
+
+
 def run_cell(cell, ph):
     """Células de treino só rodam se a fase estiver em FASES (as de análise sempre rodam)."""
     src = "".join(cell["source"])
     if src.startswith("!python src/grid_search.py"):
-        return code(f'''if executar("{ph['id']}"):
+        return code(f'''if continuar() and executar("{ph['id']}"):
     {src}''')
-    return cell
+    return guard(cell)
 
 
 def phase_test_cells(ph, specs):
@@ -557,12 +602,29 @@ def block_cells(name, s, study):
     return cells
 
 
-def build(out):
+def build(out, so_fases=None):
     doc = load("_fases")
     fases = doc["fases"]
     specs = {b: load(b) for ph in fases for b in ph["blocos"]}
     cells = [md(header(fases, specs)), md(environment_md())] + setup_cells()
-    for ph in fases:
+    if so_fases:  # notebook parcial: só estas fases treinam e aparecem; as anteriores vêm do RESUME_FROM
+        nomes = ", ".join(f["titulo"] for f in fases if f["id"] in so_fases)
+        cells.insert(2, md(f"""# Este notebook roda só: {nomes}
+
+As fases anteriores já rodaram: anexe o Output (ou um Dataset) com as pastas de resultados delas (`outputs/`,
+`outputs_btc_longo/`, …) e aponte `RESUME_FROM` para a pasta que as contém. Se a sessão chegar a `HORAS_LIMITE`, o
+notebook para de começar treinos, salva e termina: rode de novo com `RESUME_FROM` apontando para o Output desta versão,
+e ele continua de onde parou (nada que terminou é treinado de novo)."""))
+        for c in cells:
+            src = "".join(c["source"])
+            if c["cell_type"] == "code" and src.startswith("# ===== Configuração da execução"):
+                src = src.replace('FASES = ["fase1", "fase2", "fase3", "fase4", "fase5", "fase6", "fase7", "fase8"]',
+                                  f"FASES = {json.dumps(so_fases)}")
+                c["source"] = _lines(src)
+        fases_iter = [f for f in fases if f["id"] in so_fases]
+    else:
+        fases_iter = fases
+    for ph in fases_iter:
         cells.append(phase_intro(ph, specs))
         if ph.get("tipo") == "revisao":
             cells += revisao_cells(ph, fases, specs)
@@ -572,10 +634,10 @@ def build(out):
             for name in ph["blocos"]:
                 cells += [run_cell(c, ph) for c in block_cells(name, specs[name], st)]
             if ph.get("campeao_principal") and any(specs[b].get("herda_de") for b in ph["blocos"]):
-                cells += chain_cells(ph)
-            cells += phase_test_cells(ph, specs)
+                cells += [guard(c) for c in chain_cells(ph)]
+            cells += [guard(c) for c in phase_test_cells(ph, specs)]
         cells.append(descoberta_md(ph))
-    cells += closing_cells(doc)
+    cells += [guard(c) for c in closing_cells(doc)]
     nb = {"cells": cells,
           "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
                        "language_info": {"name": "python"}, "accelerator": "GPU"},
@@ -585,10 +647,16 @@ def build(out):
     with open(out, "w", encoding="utf-8") as f:
         json.dump(nb, f, indent=1, ensure_ascii=False)
         f.write("\n")
-    print(f"{out}: {len(cells)} células, {len(fases)} fases")
+    print(f"{out}: {len(cells)} células, {len(fases_iter)} fases")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--saida", default=os.path.join(ROOT, "Kaggle_LSTM.ipynb"))
-    build(parser.parse_args().saida)
+    parser.add_argument("--partes", action="store_true",
+                        help="também gera Kaggle_LSTM_fase6/7/8.ipynb (cada um cabe numa sessão do Kaggle)")
+    args = parser.parse_args()
+    build(args.saida)
+    if args.partes:
+        for fid in ("fase6", "fase7", "fase8"):
+            build(os.path.join(ROOT, f"Kaggle_LSTM_{fid}.ipynb"), [fid])
