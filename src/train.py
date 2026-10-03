@@ -147,10 +147,22 @@ def make_loss(name, p=None):
 
 
 @torch.no_grad()
-def predict(model, fd, split, batch=4096):
+def predict(model, fd, split, batch=None):
+    """Previsão em lotes. O lote encolhe com a janela (4096 janelas de 60 passos) e cai pela metade se faltar memória
+    na GPU: janelas longas (ex.: 336 h) com 4096 por lote pediam ~15 GB."""
     model.eval()
     rows = fd.idx[split]
-    out = [model(fd.windows(rows[i:i + batch])) for i in range(0, rows.numel(), batch)]
+    batch = batch or max(64, 4096 * 60 // max(int(fd.lookback), 60))
+    while True:
+        try:
+            out = [model(fd.windows(rows[i:i + batch])) for i in range(0, rows.numel(), batch)]
+            break
+        except torch.OutOfMemoryError:
+            if batch <= 16:
+                raise
+            out = None
+            torch.cuda.empty_cache()
+            batch //= 2
     return rows, torch.cat(out) if out else torch.empty(0, device=fd.device)
 
 
